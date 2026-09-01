@@ -7,8 +7,11 @@ final class UsageStore {
     private(set) var snapshots: [ProviderID: UsageSnapshot] = [:]
     private(set) var isRefreshing = false
     private(set) var lastRefresh: Date?
+    private(set) var enabledProviders: Set<ProviderID>
     var refreshInterval: TimeInterval = 300
     private var refreshTask: Task<Void, Never>?
+    private let defaults: UserDefaults
+    private let refreshOnEnable: Bool
 
     private let providers: [ProviderID: any UsageProvider] = [
         .codex: CodexUsageProvider(),
@@ -17,13 +20,30 @@ final class UsageStore {
         .commandCode: CommandCodeUsageProvider(),
     ]
 
+    init(defaults: UserDefaults = .standard, refreshOnEnable: Bool = true) {
+        self.defaults = defaults
+        self.refreshOnEnable = refreshOnEnable
+        self.enabledProviders = Set(ProviderID.allCases.filter { provider in
+            let key = "enabled.\(provider.rawValue)"
+            if defaults.object(forKey: key) != nil { return defaults.bool(forKey: key) }
+            return Self.defaultEnabled(provider)
+        })
+    }
+
     func enabled(_ provider: ProviderID) -> Bool {
-        UserDefaults.standard.object(forKey: "enabled.\(provider.rawValue)") as? Bool ?? defaultEnabled(provider)
+        enabledProviders.contains(provider)
     }
 
     func setEnabled(_ enabled: Bool, for provider: ProviderID) {
-        UserDefaults.standard.set(enabled, forKey: "enabled.\(provider.rawValue)")
-        if enabled { Task { await refresh(provider) } }
+        let wasEnabled = enabledProviders.contains(provider)
+        guard enabled != wasEnabled else { return }
+        if enabled {
+            enabledProviders.insert(provider)
+        } else {
+            enabledProviders.remove(provider)
+        }
+        defaults.set(enabled, forKey: "enabled.\(provider.rawValue)")
+        if enabled && refreshOnEnable { Task { await refresh(provider) } }
     }
 
     func start() {
@@ -58,7 +78,7 @@ final class UsageStore {
         snapshots.values.flatMap(\.buckets).compactMap(\.fractionUsed).max()
     }
 
-    private func defaultEnabled(_ provider: ProviderID) -> Bool {
+    private static func defaultEnabled(_ provider: ProviderID) -> Bool {
         provider == .codex || provider == .deepSeek
     }
 

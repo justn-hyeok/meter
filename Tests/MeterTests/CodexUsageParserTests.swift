@@ -17,3 +17,24 @@ import Testing
     #expect(snapshot.buckets[0].remaining == 12.34)
     #expect(snapshot.buckets[0].fractionUsed == nil)
 }
+
+@Test func parsesAdditionalCodexModelWindows() throws {
+    let data = #"{"rate_limit":{"primary_window":{"used_percent":12,"reset_at":2000000000},"secondary_window":null},"additional_rate_limits":[{"limit_name":"GPT-5.3-Codex-Spark","metered_feature":"codex_bengalfox","rate_limit":{"primary_window":{"used_percent":7,"reset_at":2000000100},"secondary_window":{"used_percent":21,"reset_at":2000000200}}}]}"#.data(using: .utf8)!
+    let snapshot = try CodexUsageParser.parse(data)
+    #expect(snapshot.buckets.count == 3)
+    #expect(snapshot.buckets[0].label == "5-hour")
+    #expect(snapshot.buckets[1].label == "GPT-5.3-Codex-Spark 5-hour")
+    #expect(snapshot.buckets[2].label == "GPT-5.3-Codex-Spark Weekly")
+    #expect(snapshot.buckets[2].fractionUsed == 0.21)
+}
+
+@Test func parsesCodexAppServerLimitsByID() throws {
+    let data = #"{"id":2,"result":{"rateLimits":{"limitId":"codex","limitName":null,"primary":{"usedPercent":19,"windowDurationMins":10080,"resetsAt":2000000000},"secondary":null},"rateLimitsByLimitId":{"codex":{"limitId":"codex","limitName":null,"primary":{"usedPercent":19,"windowDurationMins":10080,"resetsAt":2000000000},"secondary":null},"codex_bengalfox":{"limitId":"codex_bengalfox","limitName":"GPT-5.3-Codex-Spark","primary":{"usedPercent":7,"windowDurationMins":300,"resetsAt":2000000100},"secondary":{"usedPercent":21,"windowDurationMins":10080,"resetsAt":2000000200}}}}}"#.data(using: .utf8)!
+    let snapshot = try CodexAppServerUsageParser.parse(data)
+    #expect(snapshot.source == "Codex app-server")
+    #expect(snapshot.buckets.count == 3)
+    #expect(snapshot.buckets[0].label == "Weekly")
+    #expect(snapshot.buckets[1].label == "GPT-5.3-Codex-Spark 5-hour")
+    #expect(snapshot.buckets[2].label == "GPT-5.3-Codex-Spark Weekly")
+    #expect(snapshot.buckets[2].fractionUsed == 0.21)
+}

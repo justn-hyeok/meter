@@ -17,6 +17,13 @@ struct CodexUsageProvider: UsageProvider {
     let id = ProviderID.codex
 
     func fetch() async -> UsageSnapshot {
+        if let snapshot = try? await CodexAppServerBridge().fetch() {
+            return snapshot
+        }
+        return await fetchFromBackend()
+    }
+
+    private func fetchFromBackend() async -> UsageSnapshot {
         do {
             let url = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex/auth.json")
             let auth = try JSONDecoder().decode(CodexAuth.self, from: Data(contentsOf: url))
@@ -37,13 +44,158 @@ struct CodexUsageProvider: UsageProvider {
     }
 }
 
+enum CodexAppServerError: LocalizedError {
+    case executableNotFound
+    case timedOut
+    case failed
+    case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .executableNotFound: "Codex app or CLI not found"
+        case .timedOut: "Codex app-server timed out"
+        case .failed: "Codex app-server failed"
+        case .invalidResponse: "Codex app-server returned an invalid response"
+        }
+    }
+}
+
+struct CodexAppServerBridge: Sendable {
+    func fetch() async throws -> UsageSnapshot {
+        let executable = try executableURL()
+        return try await Task.detached {
+            let process = Process()
+            let input = Pipe()
+            let output = Pipe()
+            process.executableURL = executable
+            process.arguments = ["app-server", "--stdio"]
+            process.standardInput = input
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+
+            let timeout = DispatchWorkItem {
+                if process.isRunning { process.terminate() }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: timeout)
+            defer {
+                timeout.cancel()
+                try? input.fileHandleForWriting.close()
+                if process.isRunning { process.terminate() }
+            }
+
+            var buffer = Data()
+            func response(id: Int) throws -> Data {
+                while true {
+                    while let newline = buffer.firstIndex(of: 0x0A) {
+                        let line = Data(buffer[..<newline])
+                        buffer.removeSubrange(...newline)
+                        guard let envelope = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                              (envelope["id"] as? NSNumber)?.intValue == id else { continue }
+                        if envelope["error"] != nil { throw CodexAppServerError.failed }
+                        return line
+                    }
+
+                    // Read even after the process exits so its final response cannot be lost.
+                    let chunk = output.fileHandleForReading.availableData
+                    guard !chunk.isEmpty else { throw CodexAppServerError.invalidResponse }
+                    buffer.append(chunk)
+                }
+            }
+
+            func send(_ message: String) throws {
+                try input.fileHandleForWriting.write(contentsOf: Data((message + "\n").utf8))
+            }
+
+            try send(#"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"Meter","version":"1"},"capabilities":{"experimentalApi":true}}}"#)
+            _ = try response(id: 1)
+            try send(#"{"id":2,"method":"account/rateLimits/read","params":null}"#)
+            let line = try response(id: 2)
+            return try CodexAppServerUsageParser.parse(line)
+        }.value
+    }
+
+    private func executableURL() throws -> URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let candidates = [
+            ProcessInfo.processInfo.environment["CODEX_CLI_PATH"],
+            "/Applications/ChatGPT.app/Contents/Resources/codex",
+            "/Applications/Codex.app/Contents/Resources/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+            home.appending(path: ".local/bin/codex").path,
+            home.appending(path: ".local/share/mise/shims/codex").path,
+        ].compactMap { $0 }
+        guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            throw CodexAppServerError.executableNotFound
+        }
+        return URL(fileURLWithPath: path)
+    }
+}
+
+enum CodexAppServerUsageParser {
+    static func parse(_ data: Data, now: Date = .now) throws -> UsageSnapshot {
+        guard let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let result = envelope["result"] as? [String: Any] else {
+            throw CodexAppServerError.invalidResponse
+        }
+        let byID = result["rateLimitsByLimitId"] as? [String: [String: Any]] ?? [:]
+        let limits: [(String, [String: Any])]
+        if byID.isEmpty, let defaultLimit = result["rateLimits"] as? [String: Any] {
+            limits = [(defaultLimit["limitId"] as? String ?? "codex", defaultLimit)]
+        } else {
+            limits = byID.sorted { $0.key < $1.key }
+        }
+
+        var buckets: [UsageBucket] = []
+        for (limitID, limit) in limits {
+            let name = limit["limitName"] as? String
+            appendWindow(limit["primary"] as? [String: Any], id: "\(limitID)-primary", name: name, to: &buckets)
+            appendWindow(limit["secondary"] as? [String: Any], id: "\(limitID)-secondary", name: name, to: &buckets)
+        }
+        guard !buckets.isEmpty else { throw CodexAppServerError.invalidResponse }
+        return .init(provider: .codex, buckets: buckets, fetchedAt: now, source: "Codex app-server", state: .live, message: nil)
+    }
+
+    private static func appendWindow(_ window: [String: Any]?, id: String, name: String?, to output: inout [UsageBucket]) {
+        guard let window, let used = number(window["usedPercent"]) else { return }
+        let minutes = number(window["windowDurationMins"])
+        let windowName = minutes.map(label(for:)) ?? "Limit"
+        let label = name.map { "\($0) \(windowName)" } ?? windowName
+        let reset = number(window["resetsAt"]).map { Date(timeIntervalSince1970: $0) }
+        output.append(.init(id: id, label: label, used: used, limit: 100, remaining: max(0, 100 - used), resetAt: reset, unit: .percent))
+    }
+
+    private static func label(for minutes: Double) -> String {
+        switch Int(minutes) {
+        case 300: return "5-hour"
+        case 10_080: return "Weekly"
+        default:
+            if minutes.truncatingRemainder(dividingBy: 1_440) == 0 { return "\(Int(minutes / 1_440))-day" }
+            if minutes.truncatingRemainder(dividingBy: 60) == 0 { return "\(Int(minutes / 60))-hour" }
+            return "\(Int(minutes))-minute"
+        }
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let string = value as? String { return Double(string) }
+        return nil
+    }
+}
+
 enum CodexUsageParser {
     static func parse(_ data: Data, now: Date = .now) throws -> UsageSnapshot {
         let object = try JSONSerialization.jsonObject(with: data)
         guard let root = object as? [String: Any] else { throw URLError(.cannotParseResponse) }
         var buckets: [UsageBucket] = []
         appendWindow(root["rate_limit"] as? [String: Any], prefix: "rate", to: &buckets)
-        appendWindow(root["code_review_rate_limit"] as? [String: Any], prefix: "review", to: &buckets)
+        appendWindow(root["code_review_rate_limit"] as? [String: Any], prefix: "review", labelPrefix: "Code review", to: &buckets)
+        for (index, additional) in (root["additional_rate_limits"] as? [[String: Any]] ?? []).enumerated() {
+            let name = additional["limit_name"] as? String ?? "Additional limit"
+            let feature = additional["metered_feature"] as? String ?? String(index)
+            appendWindow(additional["rate_limit"] as? [String: Any], prefix: "additional-\(index)-\(feature)", labelPrefix: name, to: &buckets)
+        }
         if let credits = root["credits"] as? [String: Any] {
             let balance = number(credits["balance"])
             buckets.append(.init(id: "credits", label: "Credits", used: nil, limit: nil, remaining: balance, resetAt: nil, unit: .credits))
@@ -52,13 +204,14 @@ enum CodexUsageParser {
         return .init(provider: .codex, buckets: buckets, fetchedAt: now, source: "Codex wham/usage", state: .live, message: nil)
     }
 
-    private static func appendWindow(_ value: [String: Any]?, prefix: String, to output: inout [UsageBucket]) {
+    private static func appendWindow(_ value: [String: Any]?, prefix: String, labelPrefix: String? = nil, to output: inout [UsageBucket]) {
         guard let value else { return }
-        for (key, label) in [("primary_window", "5-hour"), ("secondary_window", "Weekly")] {
+        for (key, windowLabel) in [("primary_window", "5-hour"), ("secondary_window", "Weekly")] {
             guard let window = value[key] as? [String: Any] else { continue }
             let used = number(window["used_percent"])
             let reset = number(window["reset_at"]).map { Date(timeIntervalSince1970: $0) }
-            output.append(.init(id: "\(prefix)-\(key)", label: label, used: used, limit: 100, remaining: used.map { 100 - $0 }, resetAt: reset, unit: .percent))
+            let label = labelPrefix.map { "\($0) \(windowLabel)" } ?? windowLabel
+            output.append(.init(id: "\(prefix)-\(key)", label: label, used: used, limit: 100, remaining: used.map { max(0, 100 - $0) }, resetAt: reset, unit: .percent))
         }
     }
 
@@ -243,7 +396,7 @@ struct CommandCodeUsageProvider: UsageProvider {
 
     func fetch() async -> UsageSnapshot {
         do {
-            let script = #"const p=await openTab('https://commandcode.ai/studio'); const x=await p.evaluate(async()=>{const [c,s]=await Promise.all([fetch('https://api.commandcode.ai/internal/billing/credits',{credentials:'include'}),fetch('https://api.commandcode.ai/internal/usage/summary',{credentials:'include'})]); return {status:c.ok&&s.ok?200:500,body:{credits:await c.json(),summary:await s.json()}}}); console.log('METER_JSON:'+JSON.stringify(x))"#
+            let script = #"const p=await openTab('https://commandcode.ai/justn-hyeok/settings/usage'); const x=await p.evaluate(async()=>{const [c,s]=await Promise.all([fetch('https://api.commandcode.ai/internal/billing/credits',{credentials:'include'}),fetch('https://api.commandcode.ai/internal/usage/summary',{credentials:'include'})]); return {status:c.ok&&s.ok?200:500,body:{credits:await c.json(),summary:await s.json()}}}); console.log('METER_JSON:'+JSON.stringify(x))"#
             return try CommandCodeUsageParser.parse(await bridge.fetchJSON(script: script))
         } catch {
             return .unavailable(id, "Command Code unavailable: \(error.localizedDescription)")
