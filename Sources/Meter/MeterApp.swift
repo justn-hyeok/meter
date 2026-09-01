@@ -1,0 +1,107 @@
+import SwiftUI
+
+@main
+struct MeterApp: App {
+    @State private var store = UsageStore()
+
+    var body: some Scene {
+        MenuBarExtra {
+            MeterMenu(store: store)
+        } label: {
+            Label("Meter", systemImage: icon)
+                .task { store.start() }
+        }
+        .menuBarExtraStyle(.window)
+    }
+
+    private var icon: String {
+        guard let usage = store.highestUsage else { return "gauge.with.dots.needle.0percent" }
+        if usage >= 0.95 { return "gauge.with.dots.needle.100percent" }
+        if usage >= 0.8 { return "gauge.with.dots.needle.67percent" }
+        return "gauge.with.dots.needle.33percent"
+    }
+}
+
+private struct MeterMenu: View {
+    @Bindable var store: UsageStore
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Meter").font(.headline)
+                Spacer()
+                if store.isRefreshing { ProgressView().controlSize(.small) }
+                Button { Task { await store.refreshAll() } } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.plain)
+            }
+            .padding(14)
+
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    ForEach(ProviderID.allCases) { provider in
+                        ProviderCard(provider: provider, store: store)
+                    }
+                }
+                .padding(12)
+            }
+            Divider()
+            HStack {
+                Text(store.lastRefresh.map { "Updated \($0.formatted(date: .omitted, time: .shortened))" } ?? "Not updated")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
+            }
+            .font(.caption)
+            .padding(12)
+        }
+        .frame(width: 340, height: 470)
+    }
+}
+
+private struct ProviderCard: View {
+    let provider: ProviderID
+    @Bindable var store: UsageStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(provider.title).font(.subheadline.weight(.semibold))
+                Spacer()
+                Toggle("", isOn: Binding(get: { store.enabled(provider) }, set: { store.setEnabled($0, for: provider) }))
+                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+            }
+            if store.enabled(provider) {
+                if let snapshot = store.snapshots[provider], !snapshot.buckets.isEmpty {
+                    ForEach(snapshot.buckets) { bucket in UsageRow(bucket: bucket) }
+                } else {
+                    Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct UsageRow: View {
+    let bucket: UsageBucket
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text(bucket.label).font(.caption)
+                Spacer()
+                Text(value).font(.caption.monospacedDigit())
+            }
+            if let fraction = bucket.fractionUsed { ProgressView(value: fraction) }
+        }
+    }
+
+    private var value: String {
+        if bucket.unit == .percent, let used = bucket.used { return String(format: "%.0f%%", used) }
+        if let remaining = bucket.remaining { return "\(String(format: "%.2f", remaining)) \(bucket.unit.rawValue)" }
+        if let used = bucket.used { return "\(String(format: "%.2f", used)) \(bucket.unit.rawValue) used" }
+        return "—"
+    }
+}

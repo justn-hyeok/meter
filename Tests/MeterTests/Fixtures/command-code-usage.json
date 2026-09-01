@@ -1,0 +1,17 @@
+{
+  "credits": {
+    "credits": {
+      "monthlyCredits": 62.4638321627,
+      "purchasedCredits": 0
+    },
+    "windowLimits": {
+      "limited": true,
+      "fiveHour": { "used": 0, "cap": 14, "resetAt": 0 },
+      "weekly": { "used": 7.5361678373, "cap": 35, "resetAt": 1788527798495 }
+    }
+  },
+  "summary": {
+    "totalMonthlyCredits": 7.5361678373,
+    "periodBasis": "billing-period"
+  }
+}
