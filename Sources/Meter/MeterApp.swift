@@ -37,14 +37,12 @@ private struct MeterMenu: View {
             .padding(14)
 
             Divider()
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(ProviderID.allCases) { provider in
-                        ProviderCard(provider: provider, store: store)
-                    }
+            VStack(spacing: 10) {
+                ForEach(ProviderID.allCases) { provider in
+                    ProviderCard(provider: provider, store: store)
                 }
-                .padding(12)
             }
+            .padding(12)
             Divider()
             HStack {
                 Text(store.lastRefresh.map { "Updated \($0.formatted(date: .omitted, time: .shortened))" } ?? "Not updated")
@@ -55,7 +53,8 @@ private struct MeterMenu: View {
             .font(.caption)
             .padding(12)
         }
-        .frame(width: 340, height: 470)
+        .frame(width: 340)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
