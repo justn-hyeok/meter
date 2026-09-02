@@ -4,9 +4,19 @@ import PackageDescription
 let package = Package(
     name: "Meter",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "Meter", targets: ["Meter"])],
+    products: [
+        .library(name: "MeterCore", targets: ["MeterCore"]),
+        .executable(name: "MeterApp", targets: ["MeterApp"]),
+        .executable(name: "meter", targets: ["MeterCLI"]),
+    ],
     targets: [
-        .executableTarget(name: "Meter"),
-        .testTarget(name: "MeterTests", dependencies: ["Meter"], resources: [.process("Fixtures")]),
+        .target(name: "MeterCore"),
+        .executableTarget(name: "MeterApp", dependencies: ["MeterCore"]),
+        .executableTarget(name: "MeterCLI", dependencies: ["MeterCore"]),
+        .testTarget(
+            name: "MeterTests",
+            dependencies: ["MeterCore", "MeterCLI"],
+            resources: [.process("Fixtures")]
+        ),
     ]
 )

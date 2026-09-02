@@ -8,8 +8,8 @@ dist_dir="$project_dir/dist"
 app_dir="$project_dir/dist/Meter.app"
 
 cd "$project_dir"
-swift build -c release --arch arm64 --scratch-path .build/package-arm64
-swift build -c release --arch x86_64 --scratch-path .build/package-x86_64
+swift build -c release --product MeterApp --arch arm64 --scratch-path .build/package-arm64
+swift build -c release --product MeterApp --arch x86_64 --scratch-path .build/package-x86_64
 
 mkdir -p "$dist_dir"
 temporary_dir=$(mktemp -d "$dist_dir/.meter-package.XXXXXX")
@@ -19,10 +19,10 @@ backup_app="$dist_dir/.Meter.app.previous.$$"
 trap 'rm -rf "$temporary_dir" "$backup_app"' EXIT HUP INT TERM
 
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
-lipo -create "$arm_build_dir/Meter" "$intel_build_dir/Meter" -output "$contents_dir/MacOS/Meter"
+lipo -create "$arm_build_dir/MeterApp" "$intel_build_dir/MeterApp" -output "$contents_dir/MacOS/MeterApp"
 cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
 
-chmod 755 "$contents_dir/MacOS/Meter"
+chmod 755 "$contents_dir/MacOS/MeterApp"
 plutil -lint "$contents_dir/Info.plist"
 codesign --force --sign - "$temporary_app"
 codesign --verify --strict --verbose=2 "$temporary_app"

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Meter
+@testable import MeterCore
 
 @Test func parsesCodexWindowsAndCredits() throws {
     let data = #"{"rate_limit":{"primary_window":{"used_percent":12,"reset_at":2000000000},"secondary_window":{"used_percent":34,"reset_at":2000000100}},"credits":{"balance":"9.50"}}"#.data(using: .utf8)!

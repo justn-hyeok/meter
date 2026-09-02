@@ -1,4 +1,5 @@
 import SwiftUI
+import MeterCore
 
 @main
 struct MeterApp: App {

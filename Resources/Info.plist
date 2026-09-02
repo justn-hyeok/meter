@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>Meter</string>
     <key>CFBundleExecutable</key>
-    <string>Meter</string>
+    <string>MeterApp</string>
     <key>CFBundleIdentifier</key>
     <string>com.justn.meter</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -17,9 +17,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2.1</string>
+    <string>0.3.0</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>

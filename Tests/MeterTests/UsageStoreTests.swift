@@ -1,22 +1,22 @@
 import Foundation
 import Testing
-@testable import Meter
+@testable import MeterCore
 
-@Test @MainActor func providerTogglesRemainObservableAndPersisted() throws {
+@Test func providerTogglesPersistInSharedSettings() throws {
     let suiteName = "MeterTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
-    let store = UsageStore(defaults: defaults, refreshOnEnable: false)
-    #expect(!store.enabled(.cursor))
-    #expect(!store.enabled(.commandCode))
+    let settings = MeterSettings(defaults: defaults)
+    #expect(!settings.enabled(.cursor))
+    #expect(!settings.enabled(.commandCode))
 
-    store.setEnabled(true, for: .cursor)
-    store.setEnabled(true, for: .commandCode)
-    #expect(store.enabled(.cursor))
-    #expect(store.enabled(.commandCode))
+    settings.setEnabled(true, for: .cursor)
+    settings.setEnabled(true, for: .commandCode)
+    #expect(settings.enabled(.cursor))
+    #expect(settings.enabled(.commandCode))
 
-    let restored = UsageStore(defaults: defaults, refreshOnEnable: false)
+    let restored = MeterSettings(defaults: defaults)
     #expect(restored.enabled(.cursor))
     #expect(restored.enabled(.commandCode))
 }

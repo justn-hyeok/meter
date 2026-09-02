@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Meter
+@testable import MeterCore
 
 private func fixture(_ name: String) throws -> Data {
     let url = try #require(Bundle.module.url(forResource: name, withExtension: "json"))

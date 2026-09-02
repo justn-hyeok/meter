@@ -1,0 +1,125 @@
+import Darwin
+import Foundation
+import MeterCore
+
+struct CLIResult {
+    let standardOutput: String
+    let standardError: String
+    let exitCode: Int32
+}
+
+struct MeterCLIApplication {
+    static let version = "0.3.0"
+
+    let service: UsageService
+    let settings: MeterSettings
+
+    init(service: UsageService = UsageService(), settings: MeterSettings = MeterSettings()) {
+        self.service = service
+        self.settings = settings
+    }
+
+    func run(_ options: CLIOptions) async -> CLIResult {
+        switch options.command {
+        case .help:
+            return .init(standardOutput: Self.help, standardError: "", exitCode: 0)
+        case .version:
+            return .init(standardOutput: "meter \(Self.version)", standardError: "", exitCode: 0)
+        case .providers:
+            return .init(standardOutput: CLITextFormatter.providers(settings: settings), standardError: "", exitCode: 0)
+        case .enable(let providers):
+            return update(providers, enabled: true)
+        case .disable(let providers):
+            return update(providers, enabled: false)
+        case .status(let explicitProviders):
+            return await status(explicitProviders, json: options.json, strict: options.strict)
+        }
+    }
+
+    private func update(_ providers: [ProviderID], enabled: Bool) -> CLIResult {
+        for provider in providers { settings.setEnabled(enabled, for: provider) }
+        let action = enabled ? "Enabled" : "Disabled"
+        let names = providers.map(\.rawValue).joined(separator: ", ")
+        return .init(standardOutput: "\(action): \(names)", standardError: "", exitCode: 0)
+    }
+
+    private func status(_ explicitProviders: [ProviderID]?, json: Bool, strict: Bool) async -> CLIResult {
+        let selected = explicitProviders ?? settings.enabledProviders()
+        guard !selected.isEmpty else {
+            return .init(
+                standardOutput: "",
+                standardError: "No providers enabled. Run 'meter enable codex' or select one explicitly.",
+                exitCode: 2
+            )
+        }
+
+        let snapshots = await service.fetch(selected)
+        let healthyCount = snapshots.count { $0.state == .live }
+        let unhealthyCount = snapshots.count - healthyCount
+        let exitCode: Int32 = healthyCount == 0 ? 2 : (strict && unhealthyCount > 0 ? 1 : 0)
+
+        do {
+            let output = json
+                ? try CLIJSONFormatter.status(snapshots)
+                : CLITextFormatter.status(snapshots)
+            return .init(standardOutput: output, standardError: "", exitCode: exitCode)
+        } catch {
+            return .init(standardOutput: "", standardError: "Could not encode output: \(error.localizedDescription)", exitCode: 2)
+        }
+    }
+
+    static let help = """
+    Usage:
+      meter [<provider> ...] [--json] [--strict]
+      meter status [<provider> ...] [--json] [--strict]
+      meter providers
+      meter enable <provider> ...
+      meter disable <provider> ...
+
+    Providers:
+      codex, cursor, deepseek, command-code
+
+    Selection:
+      With no provider, status queries the providers enabled in Meter settings.
+      The 'all' selector queries every provider, including disabled providers.
+      'meter codex' is shorthand for 'meter status codex'.
+
+    Options:
+      --json       Print a stable JSON envelope
+      --strict     Exit 1 when any selected provider is unavailable
+      -h, --help   Show help
+      -V, --version
+
+    Exit status:
+      0  Query succeeded, or at least one provider succeeded without --strict
+      1  At least one provider was unavailable with --strict
+      2  Every selected provider was unavailable
+      64 Invalid command or arguments
+    """
+}
+
+@main
+struct MeterCLI {
+    static func main() async {
+        let result: CLIResult
+        do {
+            let options = try CLIArgumentParser.parse(Array(CommandLine.arguments.dropFirst()))
+            result = await MeterCLIApplication().run(options)
+        } catch {
+            result = .init(
+                standardOutput: "",
+                standardError: "\(error.localizedDescription)\n\n\(MeterCLIApplication.help)",
+                exitCode: 64
+            )
+        }
+
+        write(result.standardOutput, to: .standardOutput)
+        write(result.standardError, to: .standardError)
+        exit(result.exitCode)
+    }
+
+    private static func write(_ value: String, to handle: FileHandle) {
+        guard !value.isEmpty else { return }
+        handle.write(Data((value + "\n").utf8))
+    }
+}
