@@ -27,7 +27,7 @@ Codex와 DeepSeek은 기본으로 켜져 있습니다. Cursor와 Command Code는
 
 ## 설치
 
-[v0.3.0 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.3.0)에서 `Meter-0.3.0-macos-universal-unsigned.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
+[v0.3.1 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.3.1)에서 `Meter-0.3.1-macos-universal-unsigned.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
 
 릴리즈에는 ad-hoc 서명만 적용되어 있으며 공증되지 않았습니다. macOS가 첫 실행을 막으면 Finder에서 `Meter.app`을 Control-클릭하고 **열기**를 선택한 뒤 한 번 승인하세요.
 
@@ -110,7 +110,7 @@ swift run meter disable deepseek
 
 기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다.
 
-v0.3.0 릴리즈에는 `meter-0.3.0-macos-universal.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기거나, 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
+v0.3.1 릴리즈에는 `meter-0.3.1-macos-universal.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기거나, 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 
 ```sh
 ./Scripts/install-cli.sh

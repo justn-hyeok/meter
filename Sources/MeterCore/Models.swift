@@ -41,10 +41,14 @@ public struct UsageBucket: Identifiable, Codable, Sendable, Equatable {
         self.unit = unit
     }
 
-    public var fractionUsed: Double? {
-        if unit == .percent, let used { return min(max(used / 100, 0), 1) }
+    public var percentageUsed: Double? {
+        if unit == .percent, let used { return min(max(used, 0), 100) }
         guard let used, let limit, limit > 0 else { return nil }
-        return min(max(used / limit, 0), 1)
+        return min(max(used / limit * 100, 0), 100)
+    }
+
+    public var fractionUsed: Double? {
+        percentageUsed.map { $0 / 100 }
     }
 }
 

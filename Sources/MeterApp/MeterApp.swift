@@ -99,7 +99,7 @@ private struct UsageRow: View {
     }
 
     private var value: String {
-        if bucket.unit == .percent, let used = bucket.used { return String(format: "%.0f%%", used) }
+        if let percentage = bucket.percentageUsed { return String(format: "%.0f%%", percentage) }
         if let remaining = bucket.remaining { return "\(String(format: "%.2f", remaining)) \(bucket.unit.rawValue)" }
         if let used = bucket.used { return "\(String(format: "%.2f", used)) \(bucket.unit.rawValue) used" }
         return "—"

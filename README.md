@@ -27,7 +27,7 @@ Codex and DeepSeek are enabled by default. Cursor and Command Code are disabled 
 
 ## Install
 
-Download `Meter-0.3.0-macos-universal-unsigned.zip` from the [v0.3.0 release](https://github.com/justn-hyeok/meter/releases/tag/v0.3.0), extract it, and move `Meter.app` to `/Applications`.
+Download `Meter-0.3.1-macos-universal-unsigned.zip` from the [v0.3.1 release](https://github.com/justn-hyeok/meter/releases/tag/v0.3.1), extract it, and move `Meter.app` to `/Applications`.
 
 The release has an ad-hoc signature and is not notarized. If macOS blocks the first launch, Control-click `Meter.app` in Finder, choose **Open**, and confirm once.
 
@@ -110,7 +110,7 @@ With no provider argument, `meter` queries the providers enabled in the shared s
 
 The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`.
 
-The v0.3.0 release also includes `meter-0.3.0-macos-universal.zip`. Extract it and move `meter` to a directory on your `PATH`, or build and install it into `~/.local/bin` from this checkout:
+The v0.3.1 release also includes `meter-0.3.1-macos-universal.zip`. Extract it and move `meter` to a directory on your `PATH`, or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh

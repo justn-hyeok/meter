@@ -21,7 +21,9 @@ private func fixture(_ name: String) throws -> Data {
     #expect(snapshot.buckets.count == 3)
     #expect(snapshot.buckets[0].limit == 70)
     #expect(snapshot.buckets[0].remaining == 62.4638321627)
+    #expect(snapshot.buckets[0].percentageUsed! > 10.7)
     #expect(snapshot.buckets[1].fractionUsed == 0)
     #expect(snapshot.buckets[2].fractionUsed! > 0.21)
+    #expect(snapshot.buckets[2].percentageUsed! > 21.5)
     #expect(snapshot.buckets[2].resetAt != nil)
 }
