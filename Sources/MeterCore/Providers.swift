@@ -422,3 +422,95 @@ enum CommandCodeUsageParser {
         return nil
     }
 }
+
+struct ClaudeUsageProvider: UsageProvider {
+    let id = ProviderID.claude
+    private let credential: any CredentialSource
+
+    init(credential: any CredentialSource = ClaudeSubscriptionCredential()) {
+        self.credential = credential
+    }
+
+    func fetch() async -> UsageSnapshot {
+        do {
+            let data = try await AuthenticatedRequest.json(
+                "https://api.anthropic.com/api/oauth/usage",
+                credential: credential,
+                signInAt: "claude.ai"
+            )
+            return try ClaudeUsageParser.parse(data)
+        } catch {
+            return .unavailable(id, "Claude unavailable: \(error.localizedDescription)")
+        }
+    }
+}
+
+enum ClaudeUsageParser {
+    static func parse(_ data: Data, now: Date = .now) throws -> UsageSnapshot {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw URLError(.cannotParseResponse)
+        }
+
+        // Read the windows from `limits`. It is self-describing, unlike the codenamed
+        // top-level keys next to it, which come and go as plans change.
+        var buckets: [UsageBucket] = []
+        for limit in root["limits"] as? [[String: Any]] ?? [] {
+            guard let kind = limit["kind"] as? String, let percent = number(limit["percent"]) else { continue }
+            let model = ((limit["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String
+            buckets.append(.init(
+                id: [kind, model].compactMap { $0 }.joined(separator: "-").lowercased(),
+                label: label(kind: kind, model: model),
+                used: percent,
+                limit: 100,
+                remaining: max(0, 100 - percent),
+                resetAt: date(limit["resets_at"]),
+                unit: .percent
+            ))
+        }
+
+        if let spend = root["spend"] as? [String: Any],
+           spend["enabled"] as? Bool == true,
+           let used = spend["used"] as? [String: Any],
+           let minor = number(used["amount_minor"]) {
+            let exponent = number(used["exponent"]) ?? 2
+            buckets.append(.init(
+                id: "spend",
+                label: "Extra usage",
+                used: minor / pow(10, exponent),
+                limit: number(spend["limit"]).map { $0 / pow(10, exponent) },
+                remaining: nil,
+                resetAt: nil,
+                unit: .usd
+            ))
+        }
+
+        guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
+        return .init(provider: .claude, buckets: buckets, fetchedAt: now, source: "Claude account usage", state: .live, message: nil)
+    }
+
+    private static func label(kind: String, model: String?) -> String {
+        let base: String
+        switch kind {
+        case "session": base = "Session"
+        case "weekly_all", "weekly_scoped": base = "Weekly"
+        default: base = kind.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+        return model.map { "\(base) (\($0))" } ?? base
+    }
+
+    /// `resets_at` is RFC 3339, sometimes with fractional seconds and sometimes without.
+    private static func date(_ value: Any?) -> Date? {
+        guard let text = value as? String else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return fractional.date(from: text) ?? plain.date(from: text)
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let string = value as? String { return Double(string) }
+        return nil
+    }
+}

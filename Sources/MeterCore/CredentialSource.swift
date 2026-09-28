@@ -46,6 +46,38 @@ public struct CursorSessionCredential: CredentialSource {
     }
 }
 
+/// Claude Code stores the subscription OAuth token in the login keychain and refreshes
+/// it, so Meter reads that item and calls the account usage endpoint with it.
+public struct ClaudeSubscriptionCredential: CredentialSource {
+    public static let keychainService = "Claude Code-credentials"
+
+    private let readCredentials: @Sendable () throws -> String
+
+    public init() {
+        self.init(readCredentials: { try Keychain.genericPassword(service: Self.keychainService) })
+    }
+
+    init(readCredentials: @escaping @Sendable () throws -> String) {
+        self.readCredentials = readCredentials
+    }
+
+    public var sourceDescription: String { "keychain \(Self.keychainService)" }
+
+    public func authHeaders() throws -> [String: String] {
+        let payload = try readCredentials()
+        guard let root = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
+              let oauth = root["claudeAiOauth"] as? [String: Any],
+              let token = oauth["accessToken"] as? String,
+              !token.isEmpty else {
+            throw CredentialError.signInRequired("claude.ai")
+        }
+        return [
+            "Authorization": "Bearer \(token)",
+            "anthropic-beta": "oauth-2025-04-20",
+        ]
+    }
+}
+
 /// A browser session, read straight from a Chromium profile's cookie store.
 public struct BrowserSessionCredential: CredentialSource {
     public let host: String

@@ -39,3 +39,57 @@ private func fixture(_ name: String) throws -> Data {
     #expect(spend.resetAt == Date(timeIntervalSince1970: 1_791_372_368))
     #expect(snapshot.buckets.map(\.id) == ["cursor-models", "other-models", "on-demand"])
 }
+
+@Test func parsesClaudeWindowsFromTheSelfDescribingLimitsArray() throws {
+    let snapshot = try ClaudeUsageParser.parse(try fixture("claude-oauth-usage"))
+
+    // The codenamed top-level windows next to `limits` are deliberately ignored: they
+    // come and go with plan changes, while `limits` carries its own labels.
+    #expect(snapshot.buckets.map(\.id) == ["session", "weekly_all", "weekly_scoped-fable", "monthly_scoped", "spend"])
+    #expect(snapshot.buckets.map(\.label) == ["Session", "Weekly", "Weekly (Fable)", "Monthly Scoped", "Extra usage"])
+    #expect(snapshot.provider == .claude)
+    #expect(snapshot.state == .live)
+}
+
+@Test func readsClaudePercentagesAndBothResetTimestampFormats() throws {
+    let snapshot = try ClaudeUsageParser.parse(try fixture("claude-oauth-usage"))
+    let byID = Dictionary(uniqueKeysWithValues: snapshot.buckets.map { ($0.id, $0) })
+
+    let session = try #require(byID["session"])
+    #expect(session.used == 20)
+    #expect(session.remaining == 80)
+    #expect(session.unit == .percent)
+    // Fractional seconds present. ISO8601DateFormatter keeps milliseconds, so compare
+    // with a tolerance rather than against the microseconds the API sends.
+    let sessionReset = try #require(session.resetAt)
+    #expect(abs(sessionReset.timeIntervalSince1970 - 1_790_581_800.955018) < 0.001)
+
+    // Fractional seconds absent.
+    #expect(byID["weekly_scoped-fable"]?.resetAt == Date(timeIntervalSince1970: 1_790_712_000))
+    #expect(byID["monthly_scoped"]?.resetAt == nil)
+}
+
+@Test func readsClaudeExtraSpendInMajorUnits() throws {
+    let snapshot = try ClaudeUsageParser.parse(try fixture("claude-oauth-usage"))
+    let spend = try #require(snapshot.buckets.first { $0.id == "spend" })
+    #expect(spend.used == 13.50)
+    #expect(spend.limit == 50.00)
+    #expect(spend.unit == .usd)
+}
+
+@Test func skipsClaudeSpendWhenTheAccountHasItTurnedOff() throws {
+    let payload = Data("""
+    {
+      "limits": [{ "kind": "session", "percent": 5, "resets_at": null, "scope": null }],
+      "spend": { "used": { "amount_minor": 900, "exponent": 2 }, "enabled": false }
+    }
+    """.utf8)
+    let snapshot = try ClaudeUsageParser.parse(payload)
+    #expect(snapshot.buckets.map(\.id) == ["session"])
+}
+
+@Test func rejectsAClaudeResponseWithNoUsableWindows() {
+    #expect(throws: (any Error).self) {
+        try ClaudeUsageParser.parse(Data(#"{"limits":[],"seven_day":null}"#.utf8))
+    }
+}

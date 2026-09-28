@@ -111,6 +111,7 @@ enum CLIArgumentParser {
     private static func provider(named value: String) -> ProviderID? {
         switch value.lowercased() {
         case "codex": .codex
+        case "claude": .claude
         case "cursor": .cursor
         case "deepseek", "deep-seek": .deepSeek
         case "command-code", "commandcode", "goat": .commandCode

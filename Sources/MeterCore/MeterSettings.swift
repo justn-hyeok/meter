@@ -25,8 +25,9 @@ public struct MeterSettings {
         defaults.set(enabled, forKey: key(for: provider))
     }
 
+    /// Providers whose credentials are already on this machine and need no setup.
     public static func defaultEnabled(_ provider: ProviderID) -> Bool {
-        provider == .codex || provider == .deepSeek
+        provider == .codex || provider == .claude || provider == .deepSeek
     }
 
     private func key(for provider: ProviderID) -> String {

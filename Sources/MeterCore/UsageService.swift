@@ -6,6 +6,7 @@ public struct UsageService: Sendable {
     public init() {
         self.providers = [
             .codex: CodexUsageProvider(),
+            .claude: ClaudeUsageProvider(),
             .deepSeek: DeepSeekUsageProvider(),
             .cursor: CursorUsageProvider(),
             .commandCode: CommandCodeUsageProvider(),

@@ -2,6 +2,7 @@ import Foundation
 
 public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     case codex
+    case claude
     case cursor
     case deepSeek = "deepseek"
     case commandCode = "command-code"
@@ -11,6 +12,7 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     public var title: String {
         switch self {
         case .codex: "Codex"
+        case .claude: "Claude"
         case .cursor: "Cursor"
         case .deepSeek: "DeepSeek API"
         case .commandCode: "Command Code GOAT"

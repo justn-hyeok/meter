@@ -2,11 +2,12 @@
 
 [한국어](README.ko.md)
 
-Meter is a private macOS menu bar app and CLI that keeps usage and quota information for Codex, Cursor, DeepSeek API, and Command Code GOAT in one place.
+Meter is a private macOS menu bar app and CLI that keeps usage and quota information for Codex, Claude, Cursor, DeepSeek API, and Command Code GOAT in one place.
 
 ## Features
 
 - Codex default and model-specific rolling limits
+- Claude subscription session and weekly limits, including per-model windows
 - Cursor plan usage and on-demand spending
 - DeepSeek API balance
 - Command Code GOAT monthly credits and rolling limits
@@ -20,12 +21,13 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 
 - macOS 14 or later
 - A local Codex app or Codex CLI login for Codex usage
+- A Claude Code login for Claude subscription usage
 - The Cursor desktop app, signed in, for Cursor usage
 - `DEEPSEEK_API_KEY` in the app process environment for DeepSeek balance
 - A Chromium browser (Aside, Chrome, Dia, Brave, or Edge) signed in to Command Code
 - A code signing certificate, so keychain permission survives rebuilds — see [Signing](#signing)
 
-Codex and DeepSeek are enabled by default. Cursor and Command Code are disabled by default and can be enabled from the Meter menu or with `meter enable`.
+Codex, Claude, and DeepSeek are enabled by default. Cursor and Command Code are disabled by default and can be enabled from the Meter menu or with `meter enable`.
 
 Run `meter doctor` to see where each credential comes from and whether it is present. No browser needs to be installed or running for any provider.
 
@@ -46,6 +48,16 @@ Meter runs only in the menu bar and does not appear in the Dock.
 Meter first reads quotas through the official local Codex app-server method `account/rateLimits/read`. This exposes the default limit and model-specific limits such as GPT-5.3-Codex-Spark. If the local app-server is unavailable, Meter falls back to the authenticated `wham/usage` request using the existing `~/.codex/auth.json` session.
 
 No additional Meter login is required. Meter does not log credentials or raw authentication responses.
+
+### Claude
+
+1. Sign in with `claude` (Claude Code) if you have not already.
+2. Choose **Always Allow** the first time macOS asks for keychain permission.
+
+Claude Code keeps the subscription OAuth token in the login keychain and refreshes it,
+so Meter reads that item and calls the account usage endpoint. Windows are read from the
+response's self-describing `limits` array rather than the codenamed keys beside it,
+which come and go as plans change.
 
 ### Cursor
 

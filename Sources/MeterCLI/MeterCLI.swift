@@ -93,7 +93,7 @@ struct MeterCLIApplication {
       meter disable <provider> ...
 
     Providers:
-      codex, cursor, deepseek, command-code
+      codex, claude, cursor, deepseek, command-code
 
     Selection:
       With no provider, status queries the providers enabled in Meter settings.

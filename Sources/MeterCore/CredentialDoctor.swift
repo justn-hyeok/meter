@@ -31,6 +31,7 @@ public enum CredentialDoctor {
     private static func status(for provider: ProviderID) -> CredentialStatus {
         switch provider {
         case .codex: codex()
+        case .claude: claude()
         case .cursor: cursor()
         case .deepSeek: deepSeek()
         case .commandCode: commandCode()
@@ -45,6 +46,17 @@ public enum CredentialDoctor {
             source: "file ~/.codex/auth.json",
             availability: present ? .ready : .missing,
             detail: present ? "present" : "run 'codex login'"
+        )
+    }
+
+    private static func claude() -> CredentialStatus {
+        let service = ClaudeSubscriptionCredential.keychainService
+        let present = Keychain.exists(service: service)
+        return .init(
+            provider: .claude,
+            source: "keychain \(service)",
+            availability: present ? .ready : .missing,
+            detail: present ? "present; first read asks for keychain permission" : "run 'claude' and sign in"
         )
     }
 

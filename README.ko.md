@@ -2,11 +2,12 @@
 
 [English](README.md)
 
-Meter는 Codex, Cursor, DeepSeek API, Command Code GOAT의 사용량과 한도를 한곳에서 확인하는 비공개 macOS 메뉴바 앱 및 CLI입니다.
+Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT의 사용량과 한도를 한곳에서 확인하는 비공개 macOS 메뉴바 앱 및 CLI입니다.
 
 ## 주요 기능
 
 - Codex 기본 한도와 모델별 롤링 한도 표시
+- Claude 구독의 세션·주간 한도 및 모델별 윈도우 표시
 - Cursor 플랜 사용량과 온디맨드 지출 표시
 - DeepSeek API 잔액 표시
 - Command Code GOAT 월간 크레딧과 롤링 한도 표시
@@ -20,12 +21,13 @@ Meter는 Codex, Cursor, DeepSeek API, Command Code GOAT의 사용량과 한도�
 
 - macOS 14 이상
 - Codex 사용량 조회를 위한 Codex 앱 또는 Codex CLI 로그인
+- Claude 구독 사용량 조회를 위한 Claude Code 로그인
 - Cursor 사용량 조회를 위한 Cursor 데스크톱 앱 로그인
 - DeepSeek 잔액 조회를 위해 앱 실행 환경에 설정된 `DEEPSEEK_API_KEY`
 - Command Code 로그인 세션이 있는 Chromium 브라우저(Aside, Chrome, Dia, Brave, Edge)
 - 키체인 허용이 리빌드 후에도 유지되도록 하는 코드 서명 인증서 — [서명](#서명) 참고
 
-Codex와 DeepSeek은 기본으로 켜져 있습니다. Cursor와 Command Code는 기본으로 꺼져 있으며 Meter 메뉴나 `meter enable`로 켤 수 있습니다.
+Codex, Claude, DeepSeek은 기본으로 켜져 있습니다. Cursor와 Command Code는 기본으로 꺼져 있으며 Meter 메뉴나 `meter enable`로 켤 수 있습니다.
 
 각 자격 증명의 출처와 존재 여부는 `meter doctor`로 확인할 수 있습니다. 어떤 제공자도 브라우저가 설치되거나 실행되어 있을 필요는 없습니다.
 
@@ -46,6 +48,15 @@ Meter는 메뉴바에서만 실행되며 Dock에는 나타나지 않습니다.
 Meter는 먼저 공식 로컬 Codex app-server의 `account/rateLimits/read` 메서드로 한도를 조회합니다. 기본 한도와 GPT-5.3-Codex-Spark 같은 모델별 한도를 함께 받을 수 있습니다. 로컬 app-server를 사용할 수 없으면 기존 `~/.codex/auth.json` 세션으로 인증된 `wham/usage` 요청을 사용합니다.
 
 Meter에서 별도로 로그인할 필요는 없습니다. 자격 증명이나 원본 인증 응답은 로그에 남기지 않습니다.
+
+### Claude
+
+1. 아직 로그인하지 않았다면 `claude`(Claude Code)로 로그인합니다.
+2. macOS가 처음 키체인 허용을 물으면 **항상 허용**을 선택합니다.
+
+Claude Code는 구독 OAuth 토큰을 로그인 키체인에 보관하며 갱신합니다. Meter는 그 항목을 읽어 계정 사용량
+엔드포인트를 호출합니다. 윈도우는 응답의 자기설명적인 `limits` 배열에서 읽습니다. 그 옆에 있는 코드네임 키들은
+플랜이 바뀌면 생기고 사라지기 때문입니다.
 
 ### Cursor
 
