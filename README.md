@@ -13,7 +13,7 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 - Per-provider toggles that persist across launches
 - Automatic refresh every five minutes and manual refresh from the menu
 - Last-good data preserved when a refresh temporarily fails
-- Dynamic menu bar gauge based on the highest known usage percentage
+- Dynamic menu bar gauge based on the highest known usage percentage across enabled providers
 - A standalone `meter` command for interactive use and automation
 
 ## Requirements

@@ -1,48 +1,64 @@
-import AppKit
 import Foundation
-import MeterCore
 import Observation
 
+/// Menu bar state: which providers are on, their latest snapshots, and the value that
+/// drives the gauge.
+///
+/// Invariant: `snapshots` only ever holds providers that are currently enabled. The
+/// gauge reads every snapshot it can see, so a snapshot left behind by a provider the
+/// user switched off would keep driving it.
 @MainActor
 @Observable
-final class UsageStore {
-    private(set) var snapshots: [ProviderID: UsageSnapshot] = [:]
-    private(set) var isRefreshing = false
-    private(set) var lastRefresh: Date?
-    private(set) var enabledProviders: Set<ProviderID>
-    var refreshInterval: TimeInterval = 300
+public final class UsageStore {
+    public private(set) var snapshots: [ProviderID: UsageSnapshot] = [:]
+    public private(set) var isRefreshing = false
+    /// When usable data last arrived, not when a refresh was last attempted.
+    public private(set) var lastRefresh: Date?
+    public private(set) var enabledProviders: Set<ProviderID>
+    public var refreshInterval: TimeInterval = 300
+
     private var refreshTask: Task<Void, Never>?
     private let settings: MeterSettings
     private let refreshOnEnable: Bool
-    private let service = UsageService()
+    private let service: UsageService
 
-    init(
+    public convenience init(
         defaults: UserDefaults = UserDefaults(suiteName: MeterSettings.suiteName) ?? .standard,
         refreshOnEnable: Bool = true
     ) {
-        let settings = MeterSettings(defaults: defaults)
+        self.init(
+            settings: MeterSettings(defaults: defaults),
+            service: UsageService(),
+            refreshOnEnable: refreshOnEnable
+        )
+    }
+
+    init(settings: MeterSettings, service: UsageService, refreshOnEnable: Bool = true) {
         self.settings = settings
+        self.service = service
         self.refreshOnEnable = refreshOnEnable
         self.enabledProviders = Set(settings.enabledProviders())
     }
 
-    func enabled(_ provider: ProviderID) -> Bool {
+    public func enabled(_ provider: ProviderID) -> Bool {
         enabledProviders.contains(provider)
     }
 
-    func setEnabled(_ enabled: Bool, for provider: ProviderID) {
+    public func setEnabled(_ enabled: Bool, for provider: ProviderID) {
         let wasEnabled = enabledProviders.contains(provider)
         guard enabled != wasEnabled else { return }
         if enabled {
             enabledProviders.insert(provider)
         } else {
             enabledProviders.remove(provider)
+            // Drop the data with the toggle, so the gauge stops counting it.
+            snapshots[provider] = nil
         }
         settings.setEnabled(enabled, for: provider)
         if enabled && refreshOnEnable { Task { await refresh(provider) } }
     }
 
-    func start() {
+    public func start() {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             guard let self else { return }
@@ -53,19 +69,25 @@ final class UsageStore {
         }
     }
 
-    func refreshAll() async {
+    public func refreshAll() async {
         guard !isRefreshing else { return }
         isRefreshing = true
-        defer { isRefreshing = false; lastRefresh = .now }
-        let selected = ProviderID.allCases.filter(enabled)
-        for snapshot in await service.fetch(selected) { merge(snapshot) }
+        defer { isRefreshing = false }
+
+        let results = await service.fetch(ProviderID.allCases.filter(enabled))
+        for snapshot in results { merge(snapshot) }
+
+        // A refresh that produced nothing usable must not advertise itself as the last
+        // update; the menu would otherwise show a fresh time above stale figures.
+        if results.contains(where: { $0.state == .live }) { lastRefresh = .now }
     }
 
-    func refresh(_ provider: ProviderID) async {
+    public func refresh(_ provider: ProviderID) async {
+        guard enabled(provider) else { return }
         merge(await service.fetch(provider))
     }
 
-    var highestUsage: Double? {
+    public var highestUsage: Double? {
         snapshots.values.flatMap(\.buckets).compactMap(\.fractionUsed).max()
     }
 
