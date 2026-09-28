@@ -155,7 +155,7 @@ private struct ProviderCard: View {
                     Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if provider.acceptsStoredKey {
+                if store.needsKey(provider) {
                     KeyField(provider: provider, store: store)
                 }
             }
@@ -180,6 +180,13 @@ private struct UsageRow: View {
 
     private var value: String {
         if let percentage = bucket.percentageUsed { return String(format: "%.0f%%", percentage) }
+        if bucket.unit == .usd {
+            if let remaining = bucket.remaining { return String(format: "$%.2f left", remaining) }
+            if let used = bucket.used, let limit = bucket.limit {
+                return String(format: "$%.2f / $%.2f", used, limit)
+            }
+            if let used = bucket.used { return String(format: "$%.2f", used) }
+        }
         if let remaining = bucket.remaining { return "\(String(format: "%.2f", remaining)) \(bucket.unit.rawValue)" }
         if let used = bucket.used { return "\(String(format: "%.2f", used)) \(bucket.unit.rawValue) used" }
         return "—"

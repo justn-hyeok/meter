@@ -324,3 +324,28 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     // With no duration reported, naming it is a guess, and the guess was wrong.
     #expect(snapshot.buckets[0].label == "Limit")
 }
+
+@MainActor
+@Test func theKeyFieldAppearsOnlyWhereACredentialIsActuallyNeeded() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+
+    let store = UsageStore(
+        settings: settings,
+        service: UsageService(providers: [:]),
+        refreshOnEnable: false
+    )
+
+    // Providers whose credential Meter finds on the machine are never asked for a key,
+    // whatever their state.
+    for provider in ProviderID.allCases where !provider.acceptsStoredKey {
+        #expect(!store.needsKey(provider))
+    }
+
+    // Command Code authenticates through its own CLI's login, so offering a key field on a
+    // working provider was noise - the menu showed one under a card reading 92%.
+    #expect(ProviderID.commandCode.acceptsStoredKey)
+    if store.credentialStatus[.commandCode]?.isUsable == true {
+        #expect(!store.needsKey(.commandCode))
+    }
+}

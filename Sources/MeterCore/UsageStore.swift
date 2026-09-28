@@ -19,6 +19,8 @@ public final class UsageStore {
     public private(set) var alertsEnabled: Bool
     /// Cached so the menu does not read the key file from inside a SwiftUI body.
     public private(set) var storedKeyProviders: Set<ProviderID>
+    /// Cached so the menu does not probe the machine from inside a SwiftUI body.
+    public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
     public var refreshInterval: TimeInterval = 300
 
     /// Set by the app to post notifications; MeterCore stays free of UserNotifications.
@@ -60,6 +62,7 @@ public final class UsageStore {
         self.enabledProviders = Set(settings.enabledProviders())
         self.alertsEnabled = settings.alertsEnabled
         self.storedKeyProviders = Self.providersWithStoredKeys(secrets)
+        self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
     }
 
     public func enabled(_ provider: ProviderID) -> Bool {
@@ -120,6 +123,18 @@ public final class UsageStore {
         storedKeyProviders.contains(provider)
     }
 
+    /// Whether the menu should offer somewhere to type a key.
+    ///
+    /// Only for providers Meter is handed a credential for, and only while that provider
+    /// is not working: Command Code is already authenticated by its own CLI's login, so
+    /// asking for a key there was noise, and a key that turns out to be wrong brings the
+    /// field back rather than stranding the user with no way to correct it.
+    public func needsKey(_ provider: ProviderID) -> Bool {
+        guard provider.acceptsStoredKey else { return false }
+        if credentialStatus[provider]?.isUsable != true { return true }
+        return snapshots[provider]?.state == .unavailable
+    }
+
     /// Stores a key the user typed into the menu, then refreshes that provider.
     ///
     /// Throwing rather than swallowing: the directory can be unwritable, and a Save that
@@ -127,6 +142,7 @@ public final class UsageStore {
     public func storeKey(_ value: String, for provider: ProviderID) throws {
         try secrets.setSecret(value, for: provider)
         storedKeyProviders = Self.providersWithStoredKeys(secrets)
+        credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
         Task { await refresh(provider) }
     }
 
