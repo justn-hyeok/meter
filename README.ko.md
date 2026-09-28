@@ -20,10 +20,14 @@ Meter는 Codex, Cursor, DeepSeek API, Command Code GOAT의 사용량과 한도�
 
 - macOS 14 이상
 - Codex 사용량 조회를 위한 Codex 앱 또는 Codex CLI 로그인
+- Cursor 사용량 조회를 위한 Cursor 데스크톱 앱 로그인
 - DeepSeek 잔액 조회를 위해 앱 실행 환경에 설정된 `DEEPSEEK_API_KEY`
-- Cursor와 Command Code 수집을 위한 Aside Browser 및 CLI 설치와 실행, 각 서비스의 로그인 세션
+- Command Code 로그인 세션이 있는 Chromium 브라우저(Aside, Chrome, Dia, Brave, Edge)
+- 키체인 허용이 리빌드 후에도 유지되도록 하는 코드 서명 인증서 — [서명](#서명) 참고
 
 Codex와 DeepSeek은 기본으로 켜져 있습니다. Cursor와 Command Code는 기본으로 꺼져 있으며 Meter 메뉴나 `meter enable`로 켤 수 있습니다.
+
+각 자격 증명의 출처와 존재 여부는 `meter doctor`로 확인할 수 있습니다. 어떤 제공자도 브라우저가 설치되거나 실행되어 있을 필요는 없습니다.
 
 ## 설치
 
@@ -45,11 +49,11 @@ Meter에서 별도로 로그인할 필요는 없습니다. 자격 증명이나 �
 
 ### Cursor
 
-1. Aside Browser에서 `https://cursor.com/dashboard/spending`을 열고 로그인합니다.
-2. Aside Browser를 실행 상태로 둡니다.
-3. Meter에서 **Cursor**를 켜거나 `meter enable cursor`를 실행합니다.
+1. Cursor 데스크톱 앱에 로그인합니다.
+2. Meter에서 **Cursor**를 켜거나 `meter enable cursor`를 실행합니다.
+3. macOS가 처음 키체인 허용을 물으면 **항상 허용**을 선택합니다.
 
-Meter는 기존 Aside 브라우저 세션 안에서 대시보드 JSON 엔드포인트를 요청합니다. 브라우저 쿠키를 읽거나 저장하지 않습니다.
+Cursor 앱은 WorkOS 세션을 로그인 키체인에 보관하며 토큰을 스스로 갱신합니다. Meter는 그 항목을 읽어 대시보드 엔드포인트를 직접 호출하므로 브라우저가 관여하지 않습니다.
 
 ### DeepSeek API
 
@@ -61,26 +65,30 @@ Meter를 실행하는 환경에 `DEEPSEEK_API_KEY`를 설정합니다. 수집기
 
 ### Command Code GOAT
 
-1. Aside Browser에서 `https://commandcode.ai/justn-hyeok/settings/usage`를 열고 로그인합니다.
-2. Aside Browser를 실행 상태로 둡니다.
-3. Meter에서 **Command Code GOAT**를 켜거나 `meter enable command-code`를 실행합니다.
+1. 지원되는 Chromium 브라우저에서 `https://commandcode.ai`에 로그인합니다.
+2. Meter에서 **Command Code GOAT**를 켜거나 `meter enable command-code`를 실행합니다.
+3. 해당 브라우저의 Safe Storage 키체인 항목에 **항상 허용**을 선택합니다.
 
-Meter는 인증된 브라우저 세션 안에서 크레딧 및 사용량 요약 JSON 엔드포인트를 요청합니다.
+Meter는 브라우저 쿠키 저장소를 디스크에서 읽어 복호화한 뒤 크레딧 및 사용량 요약 엔드포인트를 직접 호출합니다. 브라우저가 실행 중이어야 할 필요는 없습니다.
 
-이 비공개 빌드는 `justn-hyeok` Command Code 워크스페이스에 고정되어 있습니다. 다른 워크스페이스용으로 빌드하려면 `CommandCodeUsageProvider`의 대시보드 경로를 변경해야 합니다.
+**알려진 제약:** 대시보드 엔드포인트는 API 키를 거부하며, 현재까지 확인한 브라우저 프로필에는 `commandcode.ai`의 분석용 쿠키만 있습니다. 세션이 쿠키가 아니라 로컬 스토리지에 있다는 뜻이므로 이 제공자는 현재 사용 불가로 표시됩니다. `meter doctor`가 발견한 쿠키 목록을 출력합니다.
 
 ## 개인정보 보호 및 안정성
 
 - 자격 증명, 쿠키, 토큰을 로그에 남기지 않습니다.
-- Cursor와 Command Code의 인증 요청은 Aside가 브라우저 페이지 컨텍스트 안에서 수행합니다.
+- 세션은 로컬 키체인과 브라우저 쿠키 저장소에서 읽으며, 발급한 서비스에만 전송됩니다.
+- 쿠키 저장소는 읽기 전용·immutable로 열기 때문에 실행 중인 브라우저를 방해하지 않습니다.
+- JWT는 `sub` 클레임만 읽습니다. Meter는 토큰을 검증하거나 생성하거나 다른 곳으로 보내지 않습니다.
 - Cursor와 Command Code는 비공개 대시보드 엔드포인트를 사용하므로 대시보드가 변경되면 유지보수가 필요할 수 있습니다.
 - 갱신에 실패해도 마지막 정상 스냅샷을 지우지 않고 오래된 데이터로 표시합니다.
-- Aside 수집은 20초, Codex app-server 수집은 15초 후 타임아웃됩니다.
+- 모든 제공자 요청은 15초 후 타임아웃됩니다.
 
 ## 문제 해결
 
 - **Codex를 사용할 수 없음:** Codex 앱 또는 CLI에서 로그인한 뒤 Meter를 새로고침합니다.
-- **Cursor 또는 Command Code를 사용할 수 없음:** Aside Browser가 실행 중이고 해당 대시보드에 로그인된 상태인지 확인합니다.
+- **Cursor를 사용할 수 없음:** Cursor 앱에 로그인한 뒤 Meter를 새로고침합니다.
+- **Command Code를 사용할 수 없음:** 지원되는 브라우저에서 `commandcode.ai`에 로그인한 뒤 `meter doctor`로 Meter가 무엇을 찾았는지 확인합니다.
+- **실행할 때마다 키체인 프롬프트가 뜸:** ad-hoc 서명 빌드라 리빌드마다 신원이 바뀌기 때문입니다. [서명](#서명)을 참고하세요.
 - **DeepSeek을 사용할 수 없음:** Meter를 실행한 프로세스 환경에 `DEEPSEEK_API_KEY`가 있는지 확인합니다.
 - **Dock 아이콘이 없음:** 정상 동작입니다. 메뉴바의 게이지 아이콘을 사용하세요.
 
@@ -90,8 +98,22 @@ Swift Package Manager로 앱과 테스트를 실행합니다.
 
 ```sh
 swift test
+./Scripts/build-dev.sh
 swift run MeterApp
 ```
+
+`Scripts/build-dev.sh`는 디버그 산출물을 빌드한 뒤 서명합니다. 리빌드마다 macOS가 키체인 허용을 다시 묻는 것을 막아 줍니다.
+
+### 서명
+
+Meter는 다른 앱이 소유한 자격 증명을 읽고, macOS는 그 허용을 앱의 **지정 요구사항(DR)** 기준으로 기록합니다.
+
+```
+ad-hoc  => cdhash H"97720ab1..."                 리빌드마다 변경
+인증서  => identifier "com.justn.meter" and ...  고정
+```
+
+즉 ad-hoc 서명은 리빌드할 때마다 스스로의 키체인 접근 권한을 무효화합니다. `Scripts/sign.sh`는 Developer ID 인증서를 우선 사용하고, 없으면 무료 Apple ID로 발급되는 Apple Development 인증서를 사용합니다. `METER_SIGN_IDENTITY`로 직접 지정할 수 있습니다. 공증은 다른 맥에 배포할 때만 필요합니다.
 
 ## CLI
 
@@ -101,12 +123,15 @@ swift run MeterApp
 swift run meter
 swift run meter codex
 swift run meter cursor command-code --json
+swift run meter doctor
 swift run meter providers
 swift run meter enable cursor
 swift run meter disable deepseek
 ```
 
 제공자를 생략하면 공유 설정에서 활성화된 제공자를 조회합니다. `meter all`은 비활성 제공자까지 모두 조회하며 `meter codex`는 `meter status codex`의 단축형입니다. `providers` 명령은 현재 활성화 상태를 표시합니다.
+
+`meter doctor`는 각 자격 증명의 출처와 존재 여부를 보고합니다. 네트워크 요청을 하지 않고 키체인 프롬프트도 띄우지 않으므로 제공자가 고장난 상태에서도 사용할 수 있습니다. `--strict`와 함께 쓰면 활성화된 제공자에 자격 증명이 없을 때 1을 반환합니다.
 
 기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다.
 
@@ -139,7 +164,7 @@ GitHub 릴리즈용 버전 지정 앱 및 universal CLI 압축 파일을 함께 
 실행 파일 경로를 바꿔야 할 때 사용할 수 있는 환경 변수:
 
 - `CODEX_CLI_PATH`: 별도 Codex CLI 실행 파일 경로
-- `ASIDE_CLI_PATH`: 별도 Aside CLI 실행 파일 경로
+- `METER_SIGN_IDENTITY`: 패키징 스크립트가 사용할 코드 서명 인증서
 
 ## 라이선스
 

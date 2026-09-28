@@ -2,14 +2,14 @@
 set -eu
 
 project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-arm_build_dir="$project_dir/.build/package-arm64/arm64-apple-macosx/release"
-intel_build_dir="$project_dir/.build/package-x86_64/x86_64-apple-macosx/release"
+. "$project_dir/Scripts/sign.sh"
+. "$project_dir/Scripts/build-slice.sh"
 dist_dir="$project_dir/dist"
 cli_path="$dist_dir/meter"
 
 cd "$project_dir"
-swift build -c release --product meter --arch arm64 --scratch-path .build/package-arm64
-swift build -c release --product meter --arch x86_64 --scratch-path .build/package-x86_64
+arm_build_dir=$(meter_build_slice meter arm64 .build/package-arm64)
+intel_build_dir=$(meter_build_slice meter x86_64 .build/package-x86_64)
 
 mkdir -p "$dist_dir"
 temporary_dir=$(mktemp -d "$dist_dir/.meter-cli-package.XXXXXX")
@@ -19,6 +19,7 @@ trap 'rm -rf "$temporary_dir" "$backup_cli"' EXIT HUP INT TERM
 
 lipo -create "$arm_build_dir/meter" "$intel_build_dir/meter" -output "$temporary_cli"
 chmod 755 "$temporary_cli"
+meter_sign "$temporary_cli"
 
 if [ -e "$cli_path" ]; then
     mv "$cli_path" "$backup_cli"

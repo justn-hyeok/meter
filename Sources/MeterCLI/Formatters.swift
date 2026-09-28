@@ -25,6 +25,17 @@ enum CLITextFormatter {
         }.joined(separator: "\n")
     }
 
+    static func doctor(_ statuses: [CredentialStatus]) -> String {
+        statuses.map { status in
+            [
+                padded(status.availability.rawValue, to: 8),
+                padded(status.provider.rawValue, to: 13),
+                padded(status.source, to: 36),
+                status.detail,
+            ].joined(separator: " ")
+        }.joined(separator: "\n")
+    }
+
     private static func padded(_ value: String, to width: Int) -> String {
         guard value.count < width else { return value }
         return value + String(repeating: " ", count: width - value.count)
@@ -81,12 +92,25 @@ private struct CLIJSONEnvelope: Encodable {
     let snapshots: [UsageSnapshot]
 }
 
+private struct CLIDoctorEnvelope: Encodable {
+    let schemaVersion = 1
+    let generatedAt: Date
+    let credentials: [CredentialStatus]
+}
+
 enum CLIJSONFormatter {
+    static func doctor(_ statuses: [CredentialStatus], now: Date = .now) throws -> String {
+        try encode(CLIDoctorEnvelope(generatedAt: now, credentials: statuses))
+    }
+
     static func status(_ snapshots: [UsageSnapshot], now: Date = .now) throws -> String {
+        try encode(CLIJSONEnvelope(generatedAt: now, snapshots: snapshots))
+    }
+
+    private static func encode(_ value: some Encodable) throws -> String {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        let data = try encoder.encode(CLIJSONEnvelope(generatedAt: now, snapshots: snapshots))
-        return String(decoding: data, as: UTF8.self)
+        return String(decoding: try encoder.encode(value), as: UTF8.self)
     }
 }

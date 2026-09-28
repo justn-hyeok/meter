@@ -3,6 +3,7 @@ import MeterCore
 
 enum CLICommand: Equatable {
     case status([ProviderID]?)
+    case doctor
     case providers
     case enable([ProviderID])
     case disable([ProviderID])
@@ -34,7 +35,7 @@ enum CLIArgumentError: LocalizedError, Equatable {
         case .unexpectedArguments(let command):
             "The \(command) command does not accept arguments"
         case .statusOnlyOption:
-            "The --json and --strict options are only valid for status queries"
+            "The --json and --strict options are only valid for status and doctor queries"
         }
     }
 }
@@ -65,6 +66,9 @@ enum CLIArgumentParser {
         let command: CLICommand
         switch first {
         case "status": command = .status(try parseProviders(rest, allowAll: true))
+        case "doctor":
+            guard rest.isEmpty else { throw CLIArgumentError.unexpectedArguments(first) }
+            command = .doctor
         case "providers":
             guard rest.isEmpty else { throw CLIArgumentError.unexpectedArguments(first) }
             command = .providers
@@ -82,7 +86,10 @@ enum CLIArgumentParser {
         }
 
         if json || strict {
-            guard case .status = command else { throw CLIArgumentError.statusOnlyOption }
+            switch command {
+            case .status, .doctor: break
+            default: throw CLIArgumentError.statusOnlyOption
+            }
         }
         return .init(command: command, json: json, strict: strict)
     }

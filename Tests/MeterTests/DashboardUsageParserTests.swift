@@ -27,3 +27,15 @@ private func fixture(_ name: String) throws -> Data {
     #expect(snapshot.buckets[2].percentageUsed! > 21.5)
     #expect(snapshot.buckets[2].resetAt != nil)
 }
+
+@Test func readsCursorSpendAfterTheDashboardMovedTheField() throws {
+    // Today's response keeps the amount in planUsage and leaves spendLimitUsage without
+    // it, which used to make the on-demand bucket vanish without any test failing.
+    let snapshot = try CursorUsageParser.parse(try fixture("cursor-current-period-usage-moved-spend"))
+    let spend = try #require(snapshot.buckets.first { $0.id == "on-demand" })
+    #expect(spend.used == 136.08)
+    #expect(spend.unit == .usd)
+    // billingCycleEnd arrives as a string of milliseconds.
+    #expect(spend.resetAt == Date(timeIntervalSince1970: 1_791_372_368))
+    #expect(snapshot.buckets.map(\.id) == ["cursor-models", "other-models", "on-demand"])
+}

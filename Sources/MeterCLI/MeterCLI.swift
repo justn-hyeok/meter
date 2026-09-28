@@ -31,6 +31,8 @@ struct MeterCLIApplication {
             return update(providers, enabled: true)
         case .disable(let providers):
             return update(providers, enabled: false)
+        case .doctor:
+            return doctor(json: options.json, strict: options.strict)
         case .status(let explicitProviders):
             return await status(explicitProviders, json: options.json, strict: options.strict)
         }
@@ -41,6 +43,19 @@ struct MeterCLIApplication {
         let action = enabled ? "Enabled" : "Disabled"
         let names = providers.map(\.rawValue).joined(separator: ", ")
         return .init(standardOutput: "\(action): \(names)", standardError: "", exitCode: 0)
+    }
+
+    private func doctor(json: Bool, strict: Bool) -> CLIResult {
+        let statuses = CredentialDoctor.diagnose()
+        let enabled = Set(settings.enabledProviders())
+        let blocked = statuses.filter { enabled.contains($0.provider) && $0.availability == .missing }
+        let exitCode: Int32 = strict && !blocked.isEmpty ? 1 : 0
+        do {
+            let output = json ? try CLIJSONFormatter.doctor(statuses) : CLITextFormatter.doctor(statuses)
+            return .init(standardOutput: output, standardError: "", exitCode: exitCode)
+        } catch {
+            return .init(standardOutput: "", standardError: "Could not encode output: \(error.localizedDescription)", exitCode: 2)
+        }
     }
 
     private func status(_ explicitProviders: [ProviderID]?, json: Bool, strict: Bool) async -> CLIResult {
@@ -72,6 +87,7 @@ struct MeterCLIApplication {
     Usage:
       meter [<provider> ...] [--json] [--strict]
       meter status [<provider> ...] [--json] [--strict]
+      meter doctor [--json] [--strict]
       meter providers
       meter enable <provider> ...
       meter disable <provider> ...
@@ -84,6 +100,11 @@ struct MeterCLIApplication {
       The 'all' selector queries every provider, including disabled providers.
       'meter codex' is shorthand for 'meter status codex'.
 
+    Commands:
+      status       Query provider usage
+      doctor       Report where each credential comes from and whether it is present,
+                   without any network request or keychain prompt
+
     Options:
       --json       Print a stable JSON envelope
       --strict     Exit 1 when any selected provider is unavailable
@@ -92,7 +113,8 @@ struct MeterCLIApplication {
 
     Exit status:
       0  Query succeeded, or at least one provider succeeded without --strict
-      1  At least one provider was unavailable with --strict
+      1  At least one provider was unavailable with --strict, or doctor --strict
+         found an enabled provider with no credential
       2  Every selected provider was unavailable
       64 Invalid command or arguments
     """

@@ -70,3 +70,28 @@ private struct StubProvider: UsageProvider {
     var id: ProviderID { snapshot.provider }
     func fetch() async -> UsageSnapshot { snapshot }
 }
+
+@Test func parsesDoctorCommand() throws {
+    #expect(try CLIArgumentParser.parse(["doctor"]).command == .doctor)
+    #expect(try CLIArgumentParser.parse(["doctor", "--json"]) == .init(command: .doctor, json: true, strict: false))
+    #expect(throws: CLIArgumentError.unexpectedArguments("doctor")) {
+        try CLIArgumentParser.parse(["doctor", "codex"])
+    }
+}
+
+@Test func formatsTheDoctorReport() {
+    let output = CLITextFormatter.doctor([
+        .init(provider: .cursor, source: "keychain cursor-access-token", availability: .ready, detail: "present"),
+        .init(
+            provider: .commandCode,
+            source: "browser cookies for commandcode.ai",
+            availability: .missing,
+            detail: "sign in at commandcode.ai"
+        ),
+    ])
+    let lines = output.split(separator: "\n")
+    #expect(lines.count == 2)
+    #expect(lines[0].hasPrefix("ready    cursor"))
+    #expect(lines[1].hasPrefix("missing  command-code"))
+    #expect(lines[1].hasSuffix("sign in at commandcode.ai"))
+}

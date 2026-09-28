@@ -20,10 +20,14 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 
 - macOS 14 or later
 - A local Codex app or Codex CLI login for Codex usage
+- The Cursor desktop app, signed in, for Cursor usage
 - `DEEPSEEK_API_KEY` in the app process environment for DeepSeek balance
-- Aside Browser and its CLI installed and running, with active Cursor and Command Code sessions
+- A Chromium browser (Aside, Chrome, Dia, Brave, or Edge) signed in to Command Code
+- A code signing certificate, so keychain permission survives rebuilds — see [Signing](#signing)
 
 Codex and DeepSeek are enabled by default. Cursor and Command Code are disabled by default and can be enabled from the Meter menu or with `meter enable`.
+
+Run `meter doctor` to see where each credential comes from and whether it is present. No browser needs to be installed or running for any provider.
 
 ## Install
 
@@ -45,11 +49,11 @@ No additional Meter login is required. Meter does not log credentials or raw aut
 
 ### Cursor
 
-1. Open `https://cursor.com/dashboard/spending` in Aside Browser and sign in.
-2. Keep Aside Browser running.
-3. Enable **Cursor** in Meter or run `meter enable cursor`.
+1. Sign in to the Cursor desktop app.
+2. Enable **Cursor** in Meter or run `meter enable cursor`.
+3. Choose **Always Allow** the first time macOS asks for keychain permission.
 
-Meter requests the dashboard's JSON endpoint inside the existing Aside browser session. It does not read or store browser cookies.
+Cursor keeps its WorkOS session in the login keychain and refreshes the token itself, so Meter reads that item and calls the dashboard endpoint directly. No browser is involved.
 
 ### DeepSeek API
 
@@ -61,37 +65,55 @@ Balance-only data does not affect the menu bar gauge because it has no known spe
 
 ### Command Code GOAT
 
-1. Open `https://commandcode.ai/justn-hyeok/settings/usage` in Aside Browser and sign in.
-2. Keep Aside Browser running.
-3. Enable **Command Code GOAT** in Meter or run `meter enable command-code`.
+1. Sign in to `https://commandcode.ai` in a supported Chromium browser.
+2. Enable **Command Code GOAT** in Meter or run `meter enable command-code`.
+3. Choose **Always Allow** for that browser's Safe Storage keychain item.
 
-Meter requests the credits and usage-summary JSON endpoints within that authenticated browser session.
+Meter reads the browser's cookie store from disk, decrypts it with that key, and calls the credits and usage-summary endpoints itself. The browser does not need to be running.
 
-This private build is pinned to the `justn-hyeok` Command Code workspace. Change the dashboard path in `CommandCodeUsageProvider` before building it for another workspace.
+**Known limitation:** the dashboard endpoints reject API keys, and the browser profiles checked so far hold only analytics cookies for `commandcode.ai`. That points at a session kept in local storage rather than a cookie, so this provider currently reports as unavailable. `meter doctor` prints the cookie inventory it found.
 
 ## Privacy and reliability
 
 - Credentials, cookies, and tokens are never written to logs.
-- Aside makes authenticated Cursor and Command Code requests inside the browser page context.
+- Sessions are read from the local keychain and from browser cookie stores, and are sent only to the service that issued them.
+- Cookie stores are opened read-only and immutable, so a running browser is never disturbed.
+- JWTs are read for their `sub` claim only. Meter never verifies, mints, or forwards a token elsewhere.
 - Cursor and Command Code use private dashboard endpoints and may require maintenance if those dashboards change.
 - A failed refresh keeps the last successful snapshot and marks it stale instead of erasing it.
-- Aside collection attempts time out after 20 seconds; Codex app-server attempts time out after 15 seconds.
+- Every provider request times out after 15 seconds.
 
 ## Troubleshooting
 
 - **Codex unavailable:** Sign in through the Codex app or CLI, then refresh Meter.
-- **Cursor or Command Code unavailable:** Confirm Aside Browser is running and the relevant dashboard still shows a signed-in session.
+- **Cursor unavailable:** Sign in to the Cursor app, then refresh Meter.
+- **Command Code unavailable:** Sign in at `commandcode.ai` in a supported browser, then run `meter doctor` to see what Meter found.
+- **A keychain prompt on every launch:** the build is ad-hoc signed, so each rebuild is a new identity. See [Signing](#signing).
 - **DeepSeek unavailable:** Confirm the process that launched Meter contains `DEEPSEEK_API_KEY`.
 - **No Dock icon:** This is expected; use the gauge icon in the menu bar.
 
 ## Development
 
-Run the app and tests with Swift Package Manager:
+Build and run with Swift Package Manager:
 
 ```sh
 swift test
+./Scripts/build-dev.sh
 swift run MeterApp
 ```
+
+`Scripts/build-dev.sh` builds the debug products and signs them, which is what stops macOS from asking for keychain permission again after every rebuild.
+
+### Signing
+
+Meter reads credentials that other applications own, and macOS records that permission against the app's designated requirement:
+
+```
+ad-hoc      => cdhash H"97720ab1..."                 changes on every rebuild
+certificate => identifier "com.justn.meter" and ...  stable
+```
+
+An ad-hoc signature therefore revokes Meter's own keychain access every time it is rebuilt. `Scripts/sign.sh` prefers a Developer ID certificate and falls back to an Apple Development certificate, which a free Apple ID provides. Set `METER_SIGN_IDENTITY` to choose one explicitly. Notarization is only needed to give the app to another Mac.
 
 ## CLI
 
@@ -101,12 +123,15 @@ The `meter` CLI uses the same providers and enabled-provider settings as the men
 swift run meter
 swift run meter codex
 swift run meter cursor command-code --json
+swift run meter doctor
 swift run meter providers
 swift run meter enable cursor
 swift run meter disable deepseek
 ```
 
 With no provider argument, `meter` queries the providers enabled in the shared settings. `meter all` also queries disabled providers, while `meter codex` is shorthand for `meter status codex`. The `providers` command lists the current enabled state.
+
+`meter doctor` reports where each credential comes from and whether it is present. It makes no network request and never shows a keychain prompt, so it stays usable when a provider is broken. With `--strict` it exits 1 when an enabled provider has no credential.
 
 The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`.
 
@@ -139,7 +164,7 @@ Build the versioned app and universal CLI archives together for a GitHub release
 Optional executable overrides:
 
 - `CODEX_CLI_PATH`: alternate Codex CLI executable
-- `ASIDE_CLI_PATH`: alternate Aside CLI executable
+- `METER_SIGN_IDENTITY`: code signing certificate used by the packaging scripts
 
 ## License
 

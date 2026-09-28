@@ -2,14 +2,14 @@
 set -eu
 
 project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-arm_build_dir="$project_dir/.build/package-arm64/arm64-apple-macosx/release"
-intel_build_dir="$project_dir/.build/package-x86_64/x86_64-apple-macosx/release"
+. "$project_dir/Scripts/sign.sh"
+. "$project_dir/Scripts/build-slice.sh"
 dist_dir="$project_dir/dist"
 app_dir="$project_dir/dist/Meter.app"
 
 cd "$project_dir"
-swift build -c release --product MeterApp --arch arm64 --scratch-path .build/package-arm64
-swift build -c release --product MeterApp --arch x86_64 --scratch-path .build/package-x86_64
+arm_build_dir=$(meter_build_slice MeterApp arm64 .build/package-arm64)
+intel_build_dir=$(meter_build_slice MeterApp x86_64 .build/package-x86_64)
 
 mkdir -p "$dist_dir"
 temporary_dir=$(mktemp -d "$dist_dir/.meter-package.XXXXXX")
@@ -24,8 +24,7 @@ cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
 
 chmod 755 "$contents_dir/MacOS/MeterApp"
 plutil -lint "$contents_dir/Info.plist"
-codesign --force --sign - "$temporary_app"
-codesign --verify --strict --verbose=2 "$temporary_app"
+meter_sign "$temporary_app"
 
 if [ -e "$app_dir" ]; then
     mv "$app_dir" "$backup_app"

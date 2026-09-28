@@ -256,98 +256,62 @@ enum DeepSeekUsageParser {
     }
 }
 
-enum AsideBridgeError: LocalizedError {
-    case executableNotFound
-    case timedOut
-    case failed(String)
-    case invalidResponse
-
-    var errorDescription: String? {
-        switch self {
-        case .executableNotFound: "Aside CLI not found"
-        case .timedOut: "Aside collector timed out"
-        case .failed(let message): "Aside collector failed: \(message)"
-        case .invalidResponse: "Aside returned an invalid response"
+/// Issues an authenticated JSON request using headers from a `CredentialSource`.
+enum AuthenticatedRequest {
+    static func json(
+        _ url: String,
+        method: String = "GET",
+        body: Data? = nil,
+        origin: String? = nil,
+        referer: String? = nil,
+        credential: any CredentialSource,
+        signInAt: String,
+        timeout: TimeInterval = 15
+    ) async throws -> Data {
+        var request = URLRequest(url: URL(string: url)!)
+        request.httpMethod = method
+        request.timeoutInterval = timeout
+        request.httpBody = body
+        // Send only the credential's cookies; nothing from the shared cookie store.
+        request.httpShouldHandleCookies = false
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        if let origin { request.setValue(origin, forHTTPHeaderField: "Origin") }
+        if let referer { request.setValue(referer, forHTTPHeaderField: "Referer") }
+        for (field, value) in try credential.authHeaders() {
+            request.setValue(value, forHTTPHeaderField: field)
         }
-    }
-}
 
-struct AsideBridge: Sendable {
-    private static let marker = "METER_JSON:"
-
-    func fetchJSON(script: String) async throws -> Data {
-        let executable = try executableURL()
-        return try await Task.detached {
-            let process = Process()
-            let output = Pipe()
-            process.executableURL = executable
-            process.arguments = ["repl", script]
-            process.standardOutput = output
-            process.standardError = output
-            try process.run()
-            let deadline = Date().addingTimeInterval(20)
-            let timeout = DispatchWorkItem {
-                if process.isRunning { process.terminate() }
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 20, execute: timeout)
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            timeout.cancel()
-
-            let text = String(decoding: data, as: UTF8.self)
-            if process.terminationStatus != 0, Date() >= deadline { throw AsideBridgeError.timedOut }
-            guard process.terminationStatus == 0 else {
-                throw AsideBridgeError.failed(Self.sanitizedFailure(text))
-            }
-            guard let markerRange = text.range(of: Self.marker, options: .backwards) else {
-                throw AsideBridgeError.invalidResponse
-            }
-            let payload = text[markerRange.upperBound...].prefix { $0 != "\n" && $0 != "\r" }
-            guard let envelopeData = String(payload).data(using: .utf8),
-                  let envelope = try JSONSerialization.jsonObject(with: envelopeData) as? [String: Any],
-                  let status = envelope["status"] as? Int else {
-                throw AsideBridgeError.invalidResponse
-            }
-            if status == 401 || status == 403 {
-                throw AsideBridgeError.failed("sign in to the provider in Aside Browser")
-            }
-            guard (200..<300).contains(status) else {
-                throw AsideBridgeError.failed("provider returned HTTP \(status)")
-            }
-            guard let body = envelope["body"] else { throw AsideBridgeError.invalidResponse }
-            return try JSONSerialization.data(withJSONObject: body)
-        }.value
-    }
-
-    private func executableURL() throws -> URL {
-        let environment = ProcessInfo.processInfo.environment
-        let candidates = [
-            environment["ASIDE_CLI_PATH"],
-            FileManager.default.homeDirectoryForCurrentUser.appending(path: ".local/bin/aside").path,
-            "/opt/homebrew/bin/aside",
-            "/usr/local/bin/aside",
-        ].compactMap { $0 }
-        guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            throw AsideBridgeError.executableNotFound
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        switch http.statusCode {
+        case 200..<300: return data
+        case 401, 403: throw CredentialError.signInRequired(signInAt)
+        default: throw URLError(.badServerResponse)
         }
-        return URL(fileURLWithPath: path)
-    }
-
-    private static func sanitizedFailure(_ output: String) -> String {
-        if output.localizedCaseInsensitiveContains("sign in") { return "sign in to Aside Browser" }
-        if output.localizedCaseInsensitiveContains("fetch failed") { return "Aside Browser is unavailable" }
-        return "open the provider page in Aside and verify the session"
     }
 }
 
 struct CursorUsageProvider: UsageProvider {
     let id = ProviderID.cursor
-    private let bridge = AsideBridge()
+    private let credential: any CredentialSource
+
+    init(credential: any CredentialSource = CursorSessionCredential()) {
+        self.credential = credential
+    }
 
     func fetch() async -> UsageSnapshot {
         do {
-            let script = #"const p=await openTab('https://cursor.com/dashboard/spending'); const x=await p.evaluate(async()=>{const r=await fetch('/api/dashboard/get-current-period-usage',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}); return {status:r.status,body:await r.json()}}); console.log('METER_JSON:'+JSON.stringify(x))"#
-            return try CursorUsageParser.parse(await bridge.fetchJSON(script: script))
+            let data = try await AuthenticatedRequest.json(
+                "https://cursor.com/api/dashboard/get-current-period-usage",
+                method: "POST",
+                body: Data("{}".utf8),
+                // Cursor refuses state-changing requests whose Origin does not match.
+                origin: "https://cursor.com",
+                referer: "https://cursor.com/dashboard/spending",
+                credential: credential,
+                signInAt: "cursor.com"
+            )
+            return try CursorUsageParser.parse(data)
         } catch {
             return .unavailable(id, "Cursor unavailable: \(error.localizedDescription)")
         }
@@ -363,7 +327,10 @@ enum CursorUsageParser {
         var buckets: [UsageBucket] = []
         appendPercent(usage["autoPercentUsed"], id: "cursor-models", label: "Cursor Models", to: &buckets)
         appendPercent(usage["apiPercentUsed"], id: "other-models", label: "Other Models", to: &buckets)
-        if let spend = root["spendLimitUsage"] as? [String: Any], let cents = number(spend["totalSpend"]) {
+        // Cursor moved totalSpend from spendLimitUsage into planUsage; read both so the
+        // bucket does not silently disappear when the dashboard shape changes again.
+        let spendSources = [usage, root["spendLimitUsage"] as? [String: Any]].compactMap { $0 }
+        if let cents = spendSources.lazy.compactMap({ number($0["totalSpend"]) }).first {
             buckets.append(.init(id: "on-demand", label: "On-demand spend", used: cents / 100, limit: nil, remaining: nil, resetAt: nil, unit: .usd))
         }
         guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
@@ -371,7 +338,7 @@ enum CursorUsageParser {
         buckets = buckets.map { bucket in
             .init(id: bucket.id, label: bucket.label, used: bucket.used, limit: bucket.limit, remaining: bucket.remaining, resetAt: resetAt, unit: bucket.unit)
         }
-        return .init(provider: .cursor, buckets: buckets, fetchedAt: now, source: "Cursor Spending via Aside", state: .live, message: nil)
+        return .init(provider: .cursor, buckets: buckets, fetchedAt: now, source: "Cursor dashboard", state: .live, message: nil)
     }
 
     private static func appendPercent(_ value: Any?, id: String, label: String, to output: inout [UsageBucket]) {
@@ -391,16 +358,36 @@ enum CursorUsageParser {
 }
 
 struct CommandCodeUsageProvider: UsageProvider {
+    static let host = "commandcode.ai"
+
     let id = ProviderID.commandCode
-    private let bridge = AsideBridge()
+    private let credential: any CredentialSource
+
+    init(credential: any CredentialSource = BrowserSessionCredential(host: CommandCodeUsageProvider.host)) {
+        self.credential = credential
+    }
 
     func fetch() async -> UsageSnapshot {
         do {
-            let script = #"const p=await openTab('https://commandcode.ai/justn-hyeok/settings/usage'); const x=await p.evaluate(async()=>{const [c,s]=await Promise.all([fetch('https://api.commandcode.ai/internal/billing/credits',{credentials:'include'}),fetch('https://api.commandcode.ai/internal/usage/summary',{credentials:'include'})]); return {status:c.ok&&s.ok?200:500,body:{credits:await c.json(),summary:await s.json()}}}); console.log('METER_JSON:'+JSON.stringify(x))"#
-            return try CommandCodeUsageParser.parse(await bridge.fetchJSON(script: script))
+            let credits = try await request("https://api.commandcode.ai/internal/billing/credits")
+            let summary = try await request("https://api.commandcode.ai/internal/usage/summary")
+            let combined = try JSONSerialization.data(withJSONObject: [
+                "credits": try JSONSerialization.jsonObject(with: credits),
+                "summary": try JSONSerialization.jsonObject(with: summary),
+            ])
+            return try CommandCodeUsageParser.parse(combined)
         } catch {
             return .unavailable(id, "Command Code unavailable: \(error.localizedDescription)")
         }
+    }
+
+    private func request(_ url: String) async throws -> Data {
+        try await AuthenticatedRequest.json(
+            url,
+            origin: "https://\(Self.host)",
+            credential: credential,
+            signInAt: Self.host
+        )
     }
 }
 
@@ -420,7 +407,7 @@ enum CommandCodeUsageParser {
         appendWindow(windows["fiveHour"] as? [String: Any], id: "five-hour", label: "5-hour", to: &buckets)
         appendWindow(windows["weekly"] as? [String: Any], id: "weekly", label: "Weekly", to: &buckets)
         guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
-        return .init(provider: .commandCode, buckets: buckets, fetchedAt: now, source: "Command Code usage via Aside", state: .live, message: nil)
+        return .init(provider: .commandCode, buckets: buckets, fetchedAt: now, source: "Command Code dashboard", state: .live, message: nil)
     }
 
     private static func appendWindow(_ value: [String: Any]?, id: String, label: String, to output: inout [UsageBucket]) {
