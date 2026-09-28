@@ -12,6 +12,8 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT의 사용량과 
 - DeepSeek API 잔액 표시
 - Command Code GOAT 월간 크레딧과 롤링 한도 표시
 - 앱을 다시 실행해도 유지되는 제공자별 토글
+- 사용률이 80%·95%를 넘을 때 알림 (선택)
+- 로그인 시 자동 실행
 - 5분마다 자동 갱신 및 메뉴에서 수동 갱신
 - 일시적인 갱신 실패 시 마지막 정상 데이터 보존
 - 활성화된 제공자 중 가장 높은 사용률에 따라 변하는 메뉴바 게이지
@@ -23,7 +25,7 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT의 사용량과 
 - Codex 사용량 조회를 위한 Codex 앱 또는 Codex CLI 로그인
 - Claude 구독 사용량 조회를 위한 Claude Code 로그인
 - Cursor 사용량 조회를 위한 Cursor 데스크톱 앱 로그인
-- DeepSeek 잔액 조회를 위해 앱 실행 환경에 설정된 `DEEPSEEK_API_KEY`
+- DeepSeek 잔액 조회를 위한 DeepSeek API 키 (Meter에 붙여넣거나 `DEEPSEEK_API_KEY`에 설정)
 - Command Code 로그인 세션이 있는 Chromium 브라우저(Aside, Chrome, Dia, Brave, Edge)
 - 키체인 허용이 리빌드 후에도 유지되도록 하는 코드 서명 인증서 — [서명](#서명) 참고
 
@@ -68,11 +70,15 @@ Cursor 앱은 WorkOS 세션을 로그인 키체인에 보관하며 토큰을 스
 
 ### DeepSeek API
 
-Meter를 실행하는 환경에 `DEEPSEEK_API_KEY`를 설정합니다. 수집기는 DeepSeek 공식 `/user/balance` 엔드포인트를 사용합니다.
+Meter 메뉴의 DeepSeek 카드에 키를 붙여넣거나, 파이프로 넣습니다.
 
-현재 버전에는 앱 안에서 API 키를 입력하는 기능이 없습니다. Finder에서 실행한 앱은 일반적으로 대화형 셸의 환경 변수를 상속하지 않습니다. CLI는 셸 환경을 상속하므로 `DEEPSEEK_API_KEY`가 이미 설정된 셸에서 `meter deepseek`을 실행하면 됩니다.
+```sh
+meter set-key deepseek
+```
 
-잔액만 제공하는 데이터는 알려진 지출 한도가 없으므로 메뉴바 게이지에 반영되지 않습니다.
+`set-key`는 터미널 에코를 끄고 stdin에서 읽으므로 키가 셸 히스토리에 남지 않습니다. 키는 `~/Library/Application Support/Meter/credentials.json`에 `0600`으로 저장되어 앱과 CLI가 함께 읽습니다. Finder에서 실행한 앱은 셸 환경을 전혀 상속하지 않기 때문에 환경 변수만으로는 부족했습니다. `DEEPSEEK_API_KEY`가 설정되어 있으면 그쪽이 우선하므로 기존 설정은 그대로 동작하고, `meter clear-key deepseek`으로 저장된 키를 지울 수 있습니다.
+
+수집기는 DeepSeek 공식 `/user/balance` 엔드포인트를 사용합니다. 잔액만 제공하는 데이터는 알려진 지출 한도가 없으므로 메뉴바 게이지에 반영되지 않습니다.
 
 ### Command Code GOAT
 
@@ -82,7 +88,7 @@ Meter를 실행하는 환경에 `DEEPSEEK_API_KEY`를 설정합니다. 수집기
 
 Meter는 브라우저 쿠키 저장소를 디스크에서 읽어 복호화한 뒤 크레딧 및 사용량 요약 엔드포인트를 직접 호출합니다. 브라우저가 실행 중이어야 할 필요는 없습니다.
 
-**알려진 제약:** 대시보드 엔드포인트는 API 키를 거부하며, 현재까지 확인한 브라우저 프로필에는 `commandcode.ai`의 분석용 쿠키만 있습니다. 세션이 쿠키가 아니라 로컬 스토리지에 있다는 뜻이므로 이 제공자는 현재 사용 불가로 표시됩니다. `meter doctor`가 발견한 쿠키 목록을 출력합니다.
+**알려진 제약, 더 진행하지 않음:** 대시보드 엔드포인트는 API 키를 거부하고, Command Code는 사용량 엔드포인트를 공개하지 않으며, CLI도 대화형 세션 안에서만 사용량을 보여줍니다. 확인한 브라우저 프로필에는 `commandcode.ai`의 분석용 쿠키뿐이고 세션은 로컬 스토리지에 있습니다. 남은 경로는 사설 `internal/` 엔드포인트뿐인데, 거기에 도달하기 위한 장치를 Meter에 새로 만들지는 않습니다. 이 제공자는 사용 불가로 표시되며 `meter doctor`가 발견한 쿠키 목록을 출력합니다.
 
 ## 개인정보 보호 및 안정성
 
@@ -113,7 +119,7 @@ swift test
 swift run MeterApp
 ```
 
-`Scripts/build-dev.sh`는 디버그 산출물을 빌드한 뒤 서명합니다. 리빌드마다 macOS가 키체인 허용을 다시 묻는 것을 막아 줍니다.
+`Scripts/build-dev.sh`는 디버그 산출물을 빌드한 뒤 서명합니다. 리빌드마다 macOS가 키체인 허용을 다시 묻는 것을 막아 줍니다. `swift Scripts/make-icon.swift`는 CoreGraphics로 `Resources/AppIcon.icns`를 다시 그립니다. 결과물은 커밋되어 있으므로 일반 빌드에는 추가로 필요한 것이 없습니다.
 
 ### 서명
 
@@ -135,6 +141,7 @@ swift run meter
 swift run meter codex
 swift run meter cursor command-code --json
 swift run meter doctor
+swift run meter set-key deepseek
 swift run meter providers
 swift run meter enable cursor
 swift run meter disable deepseek
@@ -142,7 +149,7 @@ swift run meter disable deepseek
 
 제공자를 생략하면 공유 설정에서 활성화된 제공자를 조회합니다. `meter all`은 비활성 제공자까지 모두 조회하며 `meter codex`는 `meter status codex`의 단축형입니다. `providers` 명령은 현재 활성화 상태를 표시합니다.
 
-`meter doctor`는 각 자격 증명의 출처와 존재 여부를 보고합니다. 네트워크 요청을 하지 않고 키체인 프롬프트도 띄우지 않으므로 제공자가 고장난 상태에서도 사용할 수 있습니다. `--strict`와 함께 쓰면 활성화된 제공자에 자격 증명이 없을 때 1을 반환합니다.
+`meter set-key <provider>`는 Meter가 이 맥에서 찾을 수 없는 제공자의 API 키를 stdin에서 읽어 저장하고, `meter clear-key <provider>`는 지웁니다. `meter doctor`는 각 자격 증명의 출처와 존재 여부를 보고합니다. 네트워크 요청을 하지 않고 키체인 프롬프트도 띄우지 않으므로 제공자가 고장난 상태에서도 사용할 수 있습니다. `--strict`와 함께 쓰면 활성화된 제공자에 자격 증명이 없을 때 1을 반환합니다.
 
 기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다.
 

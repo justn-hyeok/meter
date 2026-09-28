@@ -7,6 +7,8 @@ enum CLICommand: Equatable {
     case providers
     case enable([ProviderID])
     case disable([ProviderID])
+    case setKey(ProviderID)
+    case clearKey(ProviderID)
     case help
     case version
 }
@@ -23,6 +25,8 @@ enum CLIArgumentError: LocalizedError, Equatable {
     case missingProviders(String)
     case unexpectedArguments(String)
     case statusOnlyOption
+    case oneProviderRequired(String)
+    case providerTakesNoKey(ProviderID)
 
     var errorDescription: String? {
         switch self {
@@ -34,6 +38,10 @@ enum CLIArgumentError: LocalizedError, Equatable {
             "The \(command) command requires at least one provider"
         case .unexpectedArguments(let command):
             "The \(command) command does not accept arguments"
+        case .oneProviderRequired(let command):
+            "The \(command) command takes exactly one provider"
+        case .providerTakesNoKey(let provider):
+            "\(provider.title) does not use a stored key; Meter reads its credential from this machine"
         case .statusOnlyOption:
             "The --json and --strict options are only valid for status and doctor queries"
         }
@@ -66,6 +74,14 @@ enum CLIArgumentParser {
         let command: CLICommand
         switch first {
         case "status": command = .status(try parseProviders(rest, allowAll: true))
+        case "set-key", "clear-key":
+            guard let providers = try parseProviders(rest, allowAll: false), providers.count == 1 else {
+                throw CLIArgumentError.oneProviderRequired(first)
+            }
+            guard providers[0].acceptsStoredKey else {
+                throw CLIArgumentError.providerTakesNoKey(providers[0])
+            }
+            command = first == "set-key" ? .setKey(providers[0]) : .clearKey(providers[0])
         case "doctor":
             guard rest.isEmpty else { throw CLIArgumentError.unexpectedArguments(first) }
             command = .doctor

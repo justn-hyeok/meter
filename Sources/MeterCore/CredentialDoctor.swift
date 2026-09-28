@@ -72,12 +72,15 @@ public enum CredentialDoctor {
     }
 
     private static func deepSeek() -> CredentialStatus {
-        let present = !(ProcessInfo.processInfo.environment["DEEPSEEK_API_KEY"] ?? "").isEmpty
+        let inEnvironment = !(ProcessInfo.processInfo.environment[DeepSeekUsageProvider.environmentKey] ?? "").isEmpty
+        let stored = SecretStore.default.hasSecret(for: .deepSeek)
         return .init(
             provider: .deepSeek,
-            source: "environment DEEPSEEK_API_KEY",
-            availability: present ? .ready : .missing,
-            detail: present ? "set" : "not set in this process"
+            source: "DEEPSEEK_API_KEY or stored key",
+            availability: inEnvironment || stored ? .ready : .missing,
+            detail: inEnvironment
+                ? "set in this process"
+                : (stored ? "stored key present" : "run 'meter set-key deepseek'")
         )
     }
 

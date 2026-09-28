@@ -13,10 +13,16 @@ struct MeterCLIApplication {
 
     let service: UsageService
     let settings: MeterSettings
+    let secrets: SecretStore
 
-    init(service: UsageService = UsageService(), settings: MeterSettings = MeterSettings()) {
+    init(
+        service: UsageService = UsageService(),
+        settings: MeterSettings = MeterSettings(),
+        secrets: SecretStore = .default
+    ) {
         self.service = service
         self.settings = settings
+        self.secrets = secrets
     }
 
     func run(_ options: CLIOptions) async -> CLIResult {
@@ -31,6 +37,10 @@ struct MeterCLIApplication {
             return update(providers, enabled: true)
         case .disable(let providers):
             return update(providers, enabled: false)
+        case .setKey(let provider):
+            return setKey(for: provider)
+        case .clearKey(let provider):
+            return clearKey(for: provider)
         case .doctor:
             return doctor(json: options.json, strict: options.strict)
         case .status(let explicitProviders):
@@ -43,6 +53,46 @@ struct MeterCLIApplication {
         let action = enabled ? "Enabled" : "Disabled"
         let names = providers.map(\.rawValue).joined(separator: ", ")
         return .init(standardOutput: "\(action): \(names)", standardError: "", exitCode: 0)
+    }
+
+    private func setKey(for provider: ProviderID) -> CLIResult {
+        guard let secret = Self.readSecret(prompt: "Paste the \(provider.title) key and press Enter: "),
+              !secret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .init(standardOutput: "", standardError: "No key was read from input.", exitCode: 64)
+        }
+        do {
+            try secrets.setSecret(secret, for: provider)
+            return .init(standardOutput: "Stored a key for \(provider.rawValue)", standardError: "", exitCode: 0)
+        } catch {
+            return .init(standardOutput: "", standardError: "Could not store the key: \(error.localizedDescription)", exitCode: 2)
+        }
+    }
+
+    private func clearKey(for provider: ProviderID) -> CLIResult {
+        do {
+            try secrets.setSecret(nil, for: provider)
+            return .init(standardOutput: "Removed the stored key for \(provider.rawValue)", standardError: "", exitCode: 0)
+        } catch {
+            return .init(standardOutput: "", standardError: "Could not remove the key: \(error.localizedDescription)", exitCode: 2)
+        }
+    }
+
+    /// Reads from stdin so the key never reaches shell history, with echo off on a terminal.
+    static func readSecret(prompt: String) -> String? {
+        guard isatty(STDIN_FILENO) == 1 else {
+            return String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+        }
+        FileHandle.standardError.write(Data(prompt.utf8))
+        var original = termios()
+        tcgetattr(STDIN_FILENO, &original)
+        var quiet = original
+        quiet.c_lflag &= ~tcflag_t(ECHO)
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &quiet)
+        defer {
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &original)
+            FileHandle.standardError.write(Data("\n".utf8))
+        }
+        return readLine(strippingNewline: true)
     }
 
     private func doctor(json: Bool, strict: Bool) -> CLIResult {
@@ -91,6 +141,8 @@ struct MeterCLIApplication {
       meter providers
       meter enable <provider> ...
       meter disable <provider> ...
+      meter set-key <provider>
+      meter clear-key <provider>
 
     Providers:
       codex, claude, cursor, deepseek, command-code
@@ -104,6 +156,9 @@ struct MeterCLIApplication {
       status       Query provider usage
       doctor       Report where each credential comes from and whether it is present,
                    without any network request or keychain prompt
+      set-key      Read a provider's API key from stdin and store it for both the app
+                   and this CLI. Only providers Meter cannot find a credential for.
+      clear-key    Remove a stored key
 
     Options:
       --json       Print a stable JSON envelope

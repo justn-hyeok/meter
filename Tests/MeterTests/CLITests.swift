@@ -95,3 +95,26 @@ private struct StubProvider: UsageProvider {
     #expect(lines[1].hasPrefix("missing  command-code"))
     #expect(lines[1].hasSuffix("sign in at commandcode.ai"))
 }
+
+@Test func parsesKeyCommands() throws {
+    #expect(try CLIArgumentParser.parse(["set-key", "deepseek"]).command == .setKey(.deepSeek))
+    #expect(try CLIArgumentParser.parse(["clear-key", "deepseek"]).command == .clearKey(.deepSeek))
+
+    #expect(throws: CLIArgumentError.oneProviderRequired("set-key")) {
+        try CLIArgumentParser.parse(["set-key"])
+    }
+    #expect(throws: CLIArgumentError.oneProviderRequired("set-key")) {
+        try CLIArgumentParser.parse(["set-key", "deepseek", "codex"])
+    }
+    // Meter finds these credentials itself, so there is nothing to store.
+    #expect(throws: CLIArgumentError.providerTakesNoKey(.codex)) {
+        try CLIArgumentParser.parse(["set-key", "codex"])
+    }
+}
+
+@Test func recognisesClaudeAsAProvider() throws {
+    #expect(try CLIArgumentParser.parse(["claude"]).command == .status([.claude]))
+    #expect(ProviderID.allCases.contains(.claude))
+    #expect(ProviderID.claude.acceptsStoredKey == false)
+    #expect(ProviderID.deepSeek.acceptsStoredKey)
+}

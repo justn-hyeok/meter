@@ -9,6 +9,10 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
 
     public var id: String { rawValue }
 
+    /// Whether Meter is handed this provider's credential rather than finding it on the
+    /// machine. Those are the only ones `meter set-key` applies to.
+    public var acceptsStoredKey: Bool { self == .deepSeek }
+
     public var title: String {
         switch self {
         case .codex: "Codex"

@@ -7,7 +7,7 @@ private func fixture(_ name: String) throws -> Data {
     return try Data(contentsOf: url)
 }
 
-@Test func parsesCursorSpendingPoolsAndOnDemandSpend() throws {
+@Test func parsesCursorSpendingPoolsAndTotalSpend() throws {
     let snapshot = try CursorUsageParser.parse(fixture("cursor-current-period-usage"))
     #expect(snapshot.buckets.count == 3)
     #expect(snapshot.buckets[0].used == 38.00888888888888)
@@ -32,12 +32,15 @@ private func fixture(_ name: String) throws -> Data {
     // Today's response keeps the amount in planUsage and leaves spendLimitUsage without
     // it, which used to make the on-demand bucket vanish without any test failing.
     let snapshot = try CursorUsageParser.parse(try fixture("cursor-current-period-usage-moved-spend"))
-    let spend = try #require(snapshot.buckets.first { $0.id == "on-demand" })
+    let spend = try #require(snapshot.buckets.first { $0.id == "spend" })
     #expect(spend.used == 136.08)
     #expect(spend.unit == .usd)
     // billingCycleEnd arrives as a string of milliseconds.
     #expect(spend.resetAt == Date(timeIntervalSince1970: 1_791_372_368))
-    #expect(snapshot.buckets.map(\.id) == ["cursor-models", "other-models", "on-demand"])
+    #expect(snapshot.buckets.map(\.id) == ["cursor-models", "other-models", "spend"])
+    // No limit on purpose: planUsage.limit is the included allowance while totalSpend
+    // also counts bonus usage, so the ratio would read several hundred percent.
+    #expect(spend.limit == nil)
 }
 
 @Test func parsesClaudeWindowsFromTheSelfDescribingLimitsArray() throws {

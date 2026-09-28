@@ -8,6 +8,8 @@
     <string>Meter</string>
     <key>CFBundleExecutable</key>
     <string>MeterApp</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.justn.meter</string>
     <key>CFBundleInfoDictionaryVersion</key>

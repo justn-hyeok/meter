@@ -12,6 +12,8 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 - DeepSeek API balance
 - Command Code GOAT monthly credits and rolling limits
 - Per-provider toggles that persist across launches
+- Optional notifications when a window crosses 80% or 95%
+- Launch at login
 - Automatic refresh every five minutes and manual refresh from the menu
 - Last-good data preserved when a refresh temporarily fails
 - Dynamic menu bar gauge based on the highest known usage percentage across enabled providers
@@ -23,7 +25,7 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 - A local Codex app or Codex CLI login for Codex usage
 - A Claude Code login for Claude subscription usage
 - The Cursor desktop app, signed in, for Cursor usage
-- `DEEPSEEK_API_KEY` in the app process environment for DeepSeek balance
+- A DeepSeek API key, pasted into Meter or left in `DEEPSEEK_API_KEY`, for DeepSeek balance
 - A Chromium browser (Aside, Chrome, Dia, Brave, or Edge) signed in to Command Code
 - A code signing certificate, so keychain permission survives rebuilds — see [Signing](#signing)
 
@@ -69,11 +71,15 @@ Cursor keeps its WorkOS session in the login keychain and refreshes the token it
 
 ### DeepSeek API
 
-Set `DEEPSEEK_API_KEY` in the environment that launches Meter. The collector uses DeepSeek's official `/user/balance` endpoint.
+Paste the key into the DeepSeek card in the Meter menu, or pipe it in:
 
-This version does not include an in-app API-key field. An app launched from Finder does not normally inherit variables from your interactive shell. The CLI does inherit its shell environment, so run `meter deepseek` from a shell where `DEEPSEEK_API_KEY` is already configured.
+```sh
+meter set-key deepseek
+```
 
-Balance-only data does not affect the menu bar gauge because it has no known spending limit.
+`set-key` reads from stdin with terminal echo off, so the key never reaches shell history. It is stored at `~/Library/Application Support/Meter/credentials.json` with mode `0600`, where both the app and the CLI can read it - an app launched from Finder inherits nothing from your shell, which is why the environment variable alone was not enough. `DEEPSEEK_API_KEY` still wins when it is set, so existing setups keep working, and `meter clear-key deepseek` removes a stored key.
+
+The collector uses DeepSeek's official `/user/balance` endpoint. Balance-only data does not affect the menu bar gauge because it has no known spending limit.
 
 ### Command Code GOAT
 
@@ -83,7 +89,7 @@ Balance-only data does not affect the menu bar gauge because it has no known spe
 
 Meter reads the browser's cookie store from disk, decrypts it with that key, and calls the credits and usage-summary endpoints itself. The browser does not need to be running.
 
-**Known limitation:** the dashboard endpoints reject API keys, and the browser profiles checked so far hold only analytics cookies for `commandcode.ai`. That points at a session kept in local storage rather than a cookie, so this provider currently reports as unavailable. `meter doctor` prints the cookie inventory it found.
+**Known limitation, not being pursued:** the dashboard endpoints reject API keys, Command Code publishes no usage endpoint, its CLI only renders usage inside an interactive session, and the browser profiles checked hold nothing but analytics cookies for `commandcode.ai` - the session lives in local storage. The only route left is its private `internal/` endpoints, which is not somewhere Meter is going to grow new machinery to reach. The provider reports as unavailable, and `meter doctor` prints the cookie inventory it found.
 
 ## Privacy and reliability
 
@@ -114,7 +120,7 @@ swift test
 swift run MeterApp
 ```
 
-`Scripts/build-dev.sh` builds the debug products and signs them, which is what stops macOS from asking for keychain permission again after every rebuild.
+`Scripts/build-dev.sh` builds the debug products and signs them, which is what stops macOS from asking for keychain permission again after every rebuild. `swift Scripts/make-icon.swift` redraws `Resources/AppIcon.icns` with CoreGraphics; the result is committed so a normal build needs nothing extra.
 
 ### Signing
 
@@ -136,6 +142,7 @@ swift run meter
 swift run meter codex
 swift run meter cursor command-code --json
 swift run meter doctor
+swift run meter set-key deepseek
 swift run meter providers
 swift run meter enable cursor
 swift run meter disable deepseek
@@ -143,7 +150,7 @@ swift run meter disable deepseek
 
 With no provider argument, `meter` queries the providers enabled in the shared settings. `meter all` also queries disabled providers, while `meter codex` is shorthand for `meter status codex`. The `providers` command lists the current enabled state.
 
-`meter doctor` reports where each credential comes from and whether it is present. It makes no network request and never shows a keychain prompt, so it stays usable when a provider is broken. With `--strict` it exits 1 when an enabled provider has no credential.
+`meter set-key <provider>` stores an API key for the providers whose credential Meter cannot find on the machine, reading it from stdin; `meter clear-key <provider>` removes it. `meter doctor` reports where each credential comes from and whether it is present. It makes no network request and never shows a keychain prompt, so it stays usable when a provider is broken. With `--strict` it exits 1 when an enabled provider has no credential.
 
 The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`.
 

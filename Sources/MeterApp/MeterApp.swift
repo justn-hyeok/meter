@@ -10,7 +10,11 @@ struct MeterApp: App {
             MeterMenu(store: store)
         } label: {
             Label("Meter", systemImage: icon)
-                .task { store.start() }
+                .task {
+                    store.onAlerts = { Notifier.post($0) }
+                    Notifier.requestAuthorization()
+                    store.start()
+                }
         }
         .menuBarExtraStyle(.window)
     }
@@ -45,6 +49,8 @@ private struct MeterMenu: View {
             }
             .padding(12)
             Divider()
+            SettingsRows(store: store)
+            Divider()
             HStack {
                 Text(store.lastRefresh.map { "Updated \($0.formatted(date: .omitted, time: .shortened))" } ?? "Not updated")
                     .foregroundStyle(.secondary)
@@ -56,6 +62,62 @@ private struct MeterMenu: View {
         }
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct SettingsRows: View {
+    @Bindable var store: UsageStore
+    @State private var loginItemFailure: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if LoginItem.isAvailable {
+                Toggle("Launch at login", isOn: Binding(
+                    get: { LoginItem.isEnabled },
+                    set: { newValue in
+                        do {
+                            try LoginItem.setEnabled(newValue)
+                            loginItemFailure = nil
+                        } catch {
+                            loginItemFailure = error.localizedDescription
+                        }
+                    }
+                ))
+            }
+            Toggle("Notify at 80% and 95%", isOn: Binding(
+                get: { store.alertsEnabled },
+                set: { store.setAlertsEnabled($0) }
+            ))
+            if let loginItemFailure {
+                Text(loginItemFailure).foregroundStyle(.secondary)
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .font(.caption)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+}
+
+private struct KeyField: View {
+    let provider: ProviderID
+    @Bindable var store: UsageStore
+    @State private var key = ""
+
+    var body: some View {
+        HStack(spacing: 6) {
+            SecureField("API key", text: $key)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+            Button("Save") {
+                store.storeKey(key, for: provider)
+                key = ""
+            }
+            .controlSize(.small)
+            .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .font(.caption)
     }
 }
 
@@ -77,6 +139,9 @@ private struct ProviderCard: View {
                 } else {
                     Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                if provider.acceptsStoredKey, !store.hasStoredKey(for: provider) {
+                    KeyField(provider: provider, store: store)
                 }
             }
         }

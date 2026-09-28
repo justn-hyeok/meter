@@ -223,11 +223,27 @@ enum CodexUsageParser {
 }
 
 struct DeepSeekUsageProvider: UsageProvider {
+    static let environmentKey = "DEEPSEEK_API_KEY"
+
     let id = ProviderID.deepSeek
+    private let store: SecretStore
+    private let environment: [String: String]
+
+    init(store: SecretStore = .default, environment: [String: String] = ProcessInfo.processInfo.environment) {
+        self.store = store
+        self.environment = environment
+    }
+
+    /// The environment variable wins so existing shell setups keep working; the stored key
+    /// is what lets the app find one when launched from Finder, which inherits no shell.
+    func apiKey() -> String? {
+        if let key = environment[Self.environmentKey], !key.isEmpty { return key }
+        return store.secret(for: .deepSeek)
+    }
 
     func fetch() async -> UsageSnapshot {
-        guard let key = ProcessInfo.processInfo.environment["DEEPSEEK_API_KEY"], !key.isEmpty else {
-            return .unavailable(id, "Set DEEPSEEK_API_KEY")
+        guard let key = apiKey() else {
+            return .unavailable(id, "No API key. Run 'meter set-key deepseek' or paste one in the Meter menu.")
         }
         do {
             var request = URLRequest(url: URL(string: "https://api.deepseek.com/user/balance")!)
@@ -331,7 +347,10 @@ enum CursorUsageParser {
         // bucket does not silently disappear when the dashboard shape changes again.
         let spendSources = [usage, root["spendLimitUsage"] as? [String: Any]].compactMap { $0 }
         if let cents = spendSources.lazy.compactMap({ number($0["totalSpend"]) }).first {
-            buckets.append(.init(id: "on-demand", label: "On-demand spend", used: cents / 100, limit: nil, remaining: nil, resetAt: nil, unit: .usd))
+            // Deliberately no limit: planUsage.limit is the plan's included allowance, while
+            // totalSpend also counts the bonus usage Cursor grants on top, so dividing one by
+            // the other reports several hundred percent and would peg the menu bar gauge.
+            buckets.append(.init(id: "spend", label: "Total spend", used: cents / 100, limit: nil, remaining: nil, resetAt: nil, unit: .usd))
         }
         guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
         let resetAt = milliseconds(root["billingCycleEnd"])

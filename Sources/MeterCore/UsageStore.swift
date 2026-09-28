@@ -15,12 +15,19 @@ public final class UsageStore {
     /// When usable data last arrived, not when a refresh was last attempted.
     public private(set) var lastRefresh: Date?
     public private(set) var enabledProviders: Set<ProviderID>
+    /// Stored rather than read through to settings so the menu toggle observes changes.
+    public private(set) var alertsEnabled: Bool
     public var refreshInterval: TimeInterval = 300
 
+    /// Set by the app to post notifications; MeterCore stays free of UserNotifications.
+    public var onAlerts: (@MainActor ([UsageAlert]) -> Void)?
+
+    private var alertTracker = UsageAlertTracker()
     private var refreshTask: Task<Void, Never>?
     private let settings: MeterSettings
     private let refreshOnEnable: Bool
     private let service: UsageService
+    private let secrets: SecretStore
 
     public convenience init(
         defaults: UserDefaults = UserDefaults(suiteName: MeterSettings.suiteName) ?? .standard,
@@ -33,11 +40,18 @@ public final class UsageStore {
         )
     }
 
-    init(settings: MeterSettings, service: UsageService, refreshOnEnable: Bool = true) {
+    init(
+        settings: MeterSettings,
+        service: UsageService,
+        refreshOnEnable: Bool = true,
+        secrets: SecretStore = .default
+    ) {
         self.settings = settings
         self.service = service
+        self.secrets = secrets
         self.refreshOnEnable = refreshOnEnable
         self.enabledProviders = Set(settings.enabledProviders())
+        self.alertsEnabled = settings.alertsEnabled
     }
 
     public func enabled(_ provider: ProviderID) -> Bool {
@@ -80,6 +94,28 @@ public final class UsageStore {
         // A refresh that produced nothing usable must not advertise itself as the last
         // update; the menu would otherwise show a fresh time above stale figures.
         if results.contains(where: { $0.state == .live }) { lastRefresh = .now }
+
+        let ordered = ProviderID.allCases.compactMap { snapshots[$0] }
+        let alerts = alertTracker.alerts(for: ordered)
+        if alertsEnabled, !alerts.isEmpty { onAlerts?(alerts) }
+    }
+
+    public func setAlertsEnabled(_ enabled: Bool) {
+        guard enabled != alertsEnabled else { return }
+        alertsEnabled = enabled
+        settings.alertsEnabled = enabled
+    }
+
+    // MARK: - Provider keys
+
+    public func hasStoredKey(for provider: ProviderID) -> Bool {
+        secrets.hasSecret(for: provider)
+    }
+
+    /// Stores a key the user typed into the menu, then refreshes that provider.
+    public func storeKey(_ value: String, for provider: ProviderID) {
+        try? secrets.setSecret(value, for: provider)
+        Task { await refresh(provider) }
     }
 
     public func refresh(_ provider: ProviderID) async {
