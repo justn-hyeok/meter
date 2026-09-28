@@ -19,12 +19,14 @@ import Testing
 }
 
 @Test func parsesAdditionalCodexModelWindows() throws {
-    let data = #"{"rate_limit":{"primary_window":{"used_percent":12,"reset_at":2000000000},"secondary_window":null},"additional_rate_limits":[{"limit_name":"GPT-5.3-Codex-Spark","metered_feature":"codex_bengalfox","rate_limit":{"primary_window":{"used_percent":7,"reset_at":2000000100},"secondary_window":{"used_percent":21,"reset_at":2000000200}}}]}"#.data(using: .utf8)!
+    // limit_window_seconds is what names each window. Assuming primary meant five hours
+    // showed Codex's weekly limit as a five-hour one on the wham/usage path.
+    let data = #"{"rate_limit":{"primary_window":{"used_percent":12,"limit_window_seconds":18000,"reset_at":2000000000},"secondary_window":null},"additional_rate_limits":[{"limit_name":"GPT-5.3-Codex-Spark","metered_feature":"codex_bengalfox","rate_limit":{"primary_window":{"used_percent":7,"limit_window_seconds":18000,"reset_at":2000000100},"secondary_window":{"used_percent":21,"limit_window_seconds":604800,"reset_at":2000000200}}}]}"#.data(using: .utf8)!
     let snapshot = try CodexUsageParser.parse(data)
     #expect(snapshot.buckets.count == 3)
-    #expect(snapshot.buckets[0].label == "5-hour")
-    #expect(snapshot.buckets[1].label == "GPT-5.3-Codex-Spark 5-hour")
-    #expect(snapshot.buckets[2].label == "GPT-5.3-Codex-Spark Weekly")
+    #expect(snapshot.buckets.map(\.label) == ["5-hour", "GPT-5.3-Codex-Spark 5-hour", "GPT-5.3-Codex-Spark Weekly"])
+    // Keyed by metered_feature, the same id the app-server path emits for that limit.
+    #expect(snapshot.buckets.map(\.id) == ["codex-primary", "codex_bengalfox-primary", "codex_bengalfox-secondary"])
     #expect(snapshot.buckets[2].fractionUsed == 0.21)
 }
 

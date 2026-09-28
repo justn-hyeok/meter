@@ -266,3 +266,61 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     #expect(store.highestUsage == nil)
     #expect(store.isAllUnavailable)
 }
+
+@Test func aSecretIsReadOnceAndOnlyReReadAfterBeingRejected() throws {
+    let cache = SecretCache()
+    var loads = 0
+    func load() throws -> String {
+        loads += 1
+        return "token"
+    }
+
+    // The menu bar refreshes every five minutes. Reading the keychain each time is what
+    // made macOS ask for permission again and again for every enabled provider.
+    #expect(try cache.value(for: "svc", load: load) == "token")
+    #expect(try cache.value(for: "svc", load: load) == "token")
+    #expect(try cache.value(for: "svc", load: load) == "token")
+    #expect(loads == 1)
+
+    // A rejected credential drops the copy so a rotated token is picked up.
+    cache.forget("svc")
+    #expect(try cache.value(for: "svc", load: load) == "token")
+    #expect(loads == 2)
+
+    // Other services are unaffected.
+    cache.forget("other")
+    #expect(try cache.value(for: "svc", load: load) == "token")
+    #expect(loads == 2)
+}
+
+// MARK: - The two Codex paths must agree
+
+@Test func bothCodexPathsNameAndKeyTheSameWindowIdentically() throws {
+    // wham/usage carries limit_window_seconds, but the parser assumed primary == 5-hour.
+    // Codex's primary window is now weekly, so whenever the app-server path was
+    // unavailable the same 16% was shown as "5-hour" instead of "Weekly" - and under a
+    // different bucket id, which re-keys the alert tracker and any --json consumer.
+    let http = try CodexUsageParser.parse(Data(#"""
+    {"rate_limit":{"primary_window":{"used_percent":16,"limit_window_seconds":604800,"reset_at":2000000000},"secondary_window":null},
+     "additional_rate_limits":[{"limit_name":"gpt-reserve","metered_feature":"base_model_inference",
+       "rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":604800,"reset_at":2000000100},"secondary_window":null}}]}
+    """#.utf8))
+
+    let appServer = try CodexAppServerUsageParser.parse(Data(#"""
+    {"id":2,"result":{"rateLimitsByLimitId":{
+      "codex":{"limitId":"codex","limitName":null,"primary":{"usedPercent":16,"windowDurationMins":10080,"resetsAt":2000000000},"secondary":null},
+      "base_model_inference":{"limitId":"base_model_inference","limitName":"gpt-reserve","primary":{"usedPercent":0,"windowDurationMins":10080,"resetsAt":2000000100},"secondary":null}}}}
+    """#.utf8))
+
+    let httpWindows = http.buckets.filter { $0.unit == .percent }
+    #expect(Set(httpWindows.map(\.label)) == Set(appServer.buckets.map(\.label)))
+    #expect(Set(httpWindows.map(\.id)) == Set(appServer.buckets.map(\.id)))
+    #expect(Set(httpWindows.map(\.label)) == ["Weekly", "gpt-reserve Weekly"])
+}
+
+@Test func anUnknownCodexWindowIsNotGuessedAtAFiveHourOne() throws {
+    let data = Data(#"{"rate_limit":{"primary_window":{"used_percent":40,"reset_at":2000000000},"secondary_window":null}}"#.utf8)
+    let snapshot = try CodexUsageParser.parse(data)
+    // With no duration reported, naming it is a guess, and the guess was wrong.
+    #expect(snapshot.buckets[0].label == "Limit")
+}

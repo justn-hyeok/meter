@@ -8,6 +8,13 @@ public protocol CredentialSource: Sendable {
     /// Where the credential comes from, for `meter doctor`.
     var sourceDescription: String { get }
     func authHeaders() throws -> [String: String]
+    /// Called after the service rejects the credential, so a cached copy is not reused and
+    /// a rotated token is picked up on the next attempt.
+    func invalidate()
+}
+
+extension CredentialSource {
+    public func invalidate() {}
 }
 
 public enum CredentialError: LocalizedError, Equatable {
@@ -38,6 +45,8 @@ public struct CursorSessionCredential: CredentialSource {
 
     public var sourceDescription: String { "keychain \(Self.keychainService)" }
 
+    public func invalidate() { Keychain.forget(service: Self.keychainService) }
+
     public func authHeaders() throws -> [String: String] {
         let token = try readToken()
         let subject = try JWT.subject(token)
@@ -62,6 +71,8 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
     }
 
     public var sourceDescription: String { "keychain \(Self.keychainService)" }
+
+    public func invalidate() { Keychain.forget(service: Self.keychainService) }
 
     public func authHeaders() throws -> [String: String] {
         let payload = try readCredentials()

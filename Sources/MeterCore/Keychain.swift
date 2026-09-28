@@ -23,8 +23,52 @@ public enum KeychainError: LocalizedError, Equatable {
 /// The first read of another app's item asks the user for permission. The grant is
 /// recorded against Meter's designated requirement, so it survives rebuilds only when
 /// Meter is signed with a certificate rather than ad-hoc. See `Scripts/sign.sh`.
+/// Holds secrets for the life of the process.
+///
+/// Without this the menu bar re-read every enabled provider's keychain item on each
+/// five-minute refresh. macOS asks for permission per read unless the user picked
+/// "Always Allow", so two enabled providers meant two prompts every five minutes forever.
+final class SecretCache: @unchecked Sendable {
+    static let shared = SecretCache()
+
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func value(for service: String, load: () throws -> String) throws -> String {
+        lock.lock()
+        if let cached = values[service] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        // Loaded outside the lock: this can block on a permission prompt.
+        let loaded = try load()
+        lock.lock()
+        values[service] = loaded
+        lock.unlock()
+        return loaded
+    }
+
+    func forget(_ service: String) {
+        lock.lock()
+        values[service] = nil
+        lock.unlock()
+    }
+}
+
 public enum Keychain {
+    /// Drops the cached copy so the next read goes back to the keychain. Called when a
+    /// service rejects the credential, which is how a rotated token is picked up.
+    public static func forget(service: String) {
+        SecretCache.shared.forget(service)
+    }
+
     public static func genericPassword(service: String) throws -> String {
+        try SecretCache.shared.value(for: service) { try readFromKeychain(service: service) }
+    }
+
+    private static func readFromKeychain(service: String) throws -> String {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query(service: service, returnData: true), &item)
         switch status {

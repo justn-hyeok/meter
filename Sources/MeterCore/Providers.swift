@@ -8,6 +8,21 @@ private func numericValue(_ value: Any?) -> Double? {
     return nil
 }
 
+/// Names a rate-limit window from its length. Both Codex paths use this, because naming
+/// the same window differently depending on which one answered is how a weekly limit came
+/// to be shown as a five-hour one.
+func codexWindowLabel(minutes: Double?) -> String {
+    guard let minutes else { return "Limit" }
+    switch Int(minutes) {
+    case 300: return "5-hour"
+    case 10_080: return "Weekly"
+    default:
+        if minutes.truncatingRemainder(dividingBy: 1_440) == 0 { return "\(Int(minutes / 1_440))-day" }
+        if minutes.truncatingRemainder(dividingBy: 60) == 0 { return "\(Int(minutes / 60))-hour" }
+        return "\(Int(minutes))-minute"
+    }
+}
+
 enum ProviderHTTPError: LocalizedError, Equatable {
     case unexpectedStatus(Int)
 
@@ -208,22 +223,12 @@ enum CodexAppServerUsageParser {
     private static func appendWindow(_ window: [String: Any]?, id: String, name: String?, to output: inout [UsageBucket]) {
         guard let window, let used = numericValue(window["usedPercent"]) else { return }
         let minutes = numericValue(window["windowDurationMins"])
-        let windowName = minutes.map(label(for:)) ?? "Limit"
+        let windowName = codexWindowLabel(minutes: minutes)
         let label = name.map { "\($0) \(windowName)" } ?? windowName
         let reset = numericValue(window["resetsAt"]).map { Date(timeIntervalSince1970: $0) }
         output.append(.init(id: id, label: label, used: used, limit: 100, remaining: max(0, 100 - used), resetAt: reset, unit: .percent))
     }
 
-    private static func label(for minutes: Double) -> String {
-        switch Int(minutes) {
-        case 300: return "5-hour"
-        case 10_080: return "Weekly"
-        default:
-            if minutes.truncatingRemainder(dividingBy: 1_440) == 0 { return "\(Int(minutes / 1_440))-day" }
-            if minutes.truncatingRemainder(dividingBy: 60) == 0 { return "\(Int(minutes / 60))-hour" }
-            return "\(Int(minutes))-minute"
-        }
-    }
 
 }
 
@@ -232,12 +237,12 @@ enum CodexUsageParser {
         let object = try JSONSerialization.jsonObject(with: data)
         guard let root = object as? [String: Any] else { throw URLError(.cannotParseResponse) }
         var buckets: [UsageBucket] = []
-        appendWindow(root["rate_limit"] as? [String: Any], prefix: "rate", to: &buckets)
-        appendWindow(root["code_review_rate_limit"] as? [String: Any], prefix: "review", labelPrefix: "Code review", to: &buckets)
+        appendWindow(root["rate_limit"] as? [String: Any], prefix: "codex", to: &buckets)
+        appendWindow(root["code_review_rate_limit"] as? [String: Any], prefix: "code_review", labelPrefix: "Code review", to: &buckets)
         for (index, additional) in (root["additional_rate_limits"] as? [[String: Any]] ?? []).enumerated() {
             let name = additional["limit_name"] as? String ?? "Additional limit"
             let feature = additional["metered_feature"] as? String ?? String(index)
-            appendWindow(additional["rate_limit"] as? [String: Any], prefix: "additional-\(index)-\(feature)", labelPrefix: name, to: &buckets)
+            appendWindow(additional["rate_limit"] as? [String: Any], prefix: feature, labelPrefix: name, to: &buckets)
         }
         if let credits = root["credits"] as? [String: Any] {
             let balance = numericValue(credits["balance"])
@@ -249,15 +254,29 @@ enum CodexUsageParser {
 
     private static func appendWindow(_ value: [String: Any]?, prefix: String, labelPrefix: String? = nil, to output: inout [UsageBucket]) {
         guard let value else { return }
-        for (key, windowLabel) in [("primary_window", "5-hour"), ("secondary_window", "Weekly")] {
+        for key in ["primary_window", "secondary_window"] {
             guard let window = value[key] as? [String: Any] else { continue }
             let used = numericValue(window["used_percent"])
             let reset = numericValue(window["reset_at"]).map { Date(timeIntervalSince1970: $0) }
+            // The response reports the window length; the old code assumed primary meant
+            // five hours, which mislabelled every weekly limit it fell back to.
+            let minutes = numericValue(window["limit_window_seconds"]).map { $0 / 60 }
+            let windowLabel = codexWindowLabel(minutes: minutes)
             let label = labelPrefix.map { "\($0) \(windowLabel)" } ?? windowLabel
-            output.append(.init(id: "\(prefix)-\(key)", label: label, used: used, limit: 100, remaining: used.map { max(0, 100 - $0) }, resetAt: reset, unit: .percent))
+            // Same id the app-server path produces, so the alert tracker and any --json
+            // consumer see one stable key whichever path answered.
+            let suffix = key == "primary_window" ? "primary" : "secondary"
+            output.append(.init(
+                id: "\(prefix)-\(suffix)",
+                label: label,
+                used: used,
+                limit: 100,
+                remaining: used.map { max(0, 100 - $0) },
+                resetAt: reset,
+                unit: .percent
+            ))
         }
     }
-
 }
 
 struct DeepSeekUsageProvider: UsageProvider {
@@ -339,7 +358,9 @@ enum AuthenticatedRequest {
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         switch http.statusCode {
         case 200..<300: return data
-        case 401, 403: throw CredentialError.signInRequired(signInAt)
+        case 401, 403:
+            credential.invalidate()
+            throw CredentialError.signInRequired(signInAt)
         default: throw ProviderHTTPError.unexpectedStatus(http.statusCode)
         }
     }
