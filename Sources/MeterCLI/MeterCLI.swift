@@ -2,6 +2,9 @@ import Darwin
 import Foundation
 import MeterCore
 
+/// Read by the SIGINT handler, which cannot capture context.
+private nonisolated(unsafe) var terminalToRestore: termios?
+
 struct CLIResult {
     let standardOutput: String
     let standardError: String
@@ -23,6 +26,7 @@ struct MeterCLIApplication {
         self.service = service
         self.settings = settings
         self.secrets = secrets
+        settings.migrateIfNeeded()
     }
 
     func run(_ options: CLIOptions) async -> CLIResult {
@@ -82,13 +86,27 @@ struct MeterCLIApplication {
         guard isatty(STDIN_FILENO) == 1 else {
             return String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
         }
-        FileHandle.standardError.write(Data(prompt.utf8))
+
         var original = termios()
-        tcgetattr(STDIN_FILENO, &original)
+        // Without this check a failing tcgetattr would leave `original` zeroed, and the
+        // restore below would push that onto the terminal instead of putting it back.
+        guard tcgetattr(STDIN_FILENO, &original) == 0 else { return readLine(strippingNewline: true) }
+
+        FileHandle.standardError.write(Data(prompt.utf8))
         var quiet = original
         quiet.c_lflag &= ~tcflag_t(ECHO)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &quiet)
+
+        // Ctrl-C at the prompt would otherwise terminate the process with echo still off,
+        // leaving the user's shell silently not echoing until they run `stty sane`.
+        terminalToRestore = original
+        signal(SIGINT) { _ in
+            if var restore = terminalToRestore { tcsetattr(STDIN_FILENO, TCSAFLUSH, &restore) }
+            _exit(130)
+        }
         defer {
+            signal(SIGINT, SIG_DFL)
+            terminalToRestore = nil
             tcsetattr(STDIN_FILENO, TCSAFLUSH, &original)
             FileHandle.standardError.write(Data("\n".utf8))
         }
@@ -98,7 +116,7 @@ struct MeterCLIApplication {
     private func doctor(json: Bool, strict: Bool) -> CLIResult {
         let statuses = CredentialDoctor.diagnose()
         let enabled = Set(settings.enabledProviders())
-        let blocked = statuses.filter { enabled.contains($0.provider) && $0.availability == .missing }
+        let blocked = statuses.filter { enabled.contains($0.provider) && !$0.isUsable }
         let exitCode: Int32 = strict && !blocked.isEmpty ? 1 : 0
         do {
             let output = json ? try CLIJSONFormatter.doctor(statuses) : CLITextFormatter.doctor(statuses)

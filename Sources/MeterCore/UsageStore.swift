@@ -17,12 +17,18 @@ public final class UsageStore {
     public private(set) var enabledProviders: Set<ProviderID>
     /// Stored rather than read through to settings so the menu toggle observes changes.
     public private(set) var alertsEnabled: Bool
+    /// Cached so the menu does not read the key file from inside a SwiftUI body.
+    public private(set) var storedKeyProviders: Set<ProviderID>
     public var refreshInterval: TimeInterval = 300
 
     /// Set by the app to post notifications; MeterCore stays free of UserNotifications.
     public var onAlerts: (@MainActor ([UsageAlert]) -> Void)?
 
     private var alertTracker = UsageAlertTracker()
+    /// Identifies the most recently started fetch per provider, so a slow batch cannot
+    /// land on top of a newer single refresh that has already answered.
+    private var latestFetch: [ProviderID: Int] = [:]
+    private var fetchCounter = 0
     private var refreshTask: Task<Void, Never>?
     private let settings: MeterSettings
     private let refreshOnEnable: Bool
@@ -50,8 +56,10 @@ public final class UsageStore {
         self.service = service
         self.secrets = secrets
         self.refreshOnEnable = refreshOnEnable
+        settings.migrateIfNeeded()
         self.enabledProviders = Set(settings.enabledProviders())
         self.alertsEnabled = settings.alertsEnabled
+        self.storedKeyProviders = Self.providersWithStoredKeys(secrets)
     }
 
     public func enabled(_ provider: ProviderID) -> Bool {
@@ -88,16 +96,16 @@ public final class UsageStore {
         isRefreshing = true
         defer { isRefreshing = false }
 
-        let results = await service.fetch(ProviderID.allCases.filter(enabled))
-        for snapshot in results { merge(snapshot) }
+        let selected = ProviderID.allCases.filter(enabled)
+        let tokens = Dictionary(uniqueKeysWithValues: selected.map { ($0, beginFetch($0)) })
+        let results = await service.fetch(selected)
+        for snapshot in results { merge(snapshot, token: tokens[snapshot.provider]) }
 
         // A refresh that produced nothing usable must not advertise itself as the last
         // update; the menu would otherwise show a fresh time above stale figures.
         if results.contains(where: { $0.state == .live }) { lastRefresh = .now }
 
-        let ordered = ProviderID.allCases.compactMap { snapshots[$0] }
-        let alerts = alertTracker.alerts(for: ordered)
-        if alertsEnabled, !alerts.isEmpty { onAlerts?(alerts) }
+        announceAlerts()
     }
 
     public func setAlertsEnabled(_ enabled: Bool) {
@@ -109,25 +117,61 @@ public final class UsageStore {
     // MARK: - Provider keys
 
     public func hasStoredKey(for provider: ProviderID) -> Bool {
-        secrets.hasSecret(for: provider)
+        storedKeyProviders.contains(provider)
     }
 
     /// Stores a key the user typed into the menu, then refreshes that provider.
-    public func storeKey(_ value: String, for provider: ProviderID) {
-        try? secrets.setSecret(value, for: provider)
+    ///
+    /// Throwing rather than swallowing: the directory can be unwritable, and a Save that
+    /// silently did nothing while clearing the field left the user retyping forever.
+    public func storeKey(_ value: String, for provider: ProviderID) throws {
+        try secrets.setSecret(value, for: provider)
+        storedKeyProviders = Self.providersWithStoredKeys(secrets)
         Task { await refresh(provider) }
+    }
+
+    private static func providersWithStoredKeys(_ secrets: SecretStore) -> Set<ProviderID> {
+        Set(ProviderID.allCases.filter { $0.acceptsStoredKey && secrets.hasSecret(for: $0) })
     }
 
     public func refresh(_ provider: ProviderID) async {
         guard enabled(provider) else { return }
-        merge(await service.fetch(provider))
+        let token = beginFetch(provider)
+        merge(await service.fetch(provider), token: token)
+        announceAlerts()
+    }
+
+    private func beginFetch(_ provider: ProviderID) -> Int {
+        fetchCounter += 1
+        latestFetch[provider] = fetchCounter
+        return fetchCounter
+    }
+
+    /// The tracker is consulted only when alerts are on. Asking it while they are off
+    /// would record the crossing as already announced, and turning them back on would
+    /// then stay silent until the window rolled.
+    private func announceAlerts() {
+        guard alertsEnabled else { return }
+        let alerts = alertTracker.alerts(for: ProviderID.allCases.compactMap { snapshots[$0] })
+        if !alerts.isEmpty { onAlerts?(alerts) }
+    }
+
+    /// Every enabled provider answered and none produced data. `highestUsage` is nil for
+    /// this and for "nothing enabled" alike, and the menu drew both as a zero-percent
+    /// needle - a total credential failure looked like a healthy, idle account.
+    public var isAllUnavailable: Bool {
+        !enabledProviders.isEmpty && enabledProviders.allSatisfy { snapshots[$0]?.buckets.isEmpty ?? false }
     }
 
     public var highestUsage: Double? {
         snapshots.values.flatMap(\.buckets).compactMap(\.fractionUsed).max()
     }
 
-    private func merge(_ incoming: UsageSnapshot) {
+    private func merge(_ incoming: UsageSnapshot, token: Int?) {
+        // Both callers suspend for up to fifteen seconds. In that window the user can switch
+        // the provider off, or a newer fetch can answer first; neither result belongs here.
+        guard enabled(incoming.provider), let token, latestFetch[incoming.provider] == token else { return }
+
         if incoming.state == .unavailable,
            let previous = snapshots[incoming.provider],
            previous.state != .unavailable,

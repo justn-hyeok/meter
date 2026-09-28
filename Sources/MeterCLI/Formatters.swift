@@ -30,7 +30,7 @@ enum CLITextFormatter {
             [
                 padded(status.availability.rawValue, to: 8),
                 padded(status.provider.rawValue, to: 13),
-                padded(status.source, to: 36),
+                padded(status.source, to: 32),
                 status.detail,
             ].joined(separator: " ")
         }.joined(separator: "\n")
@@ -47,8 +47,13 @@ enum CLITextFormatter {
         case .percent:
             if let used = bucket.used { components.append("\(number(used, maximumFractionDigits: 1))% used") }
         case .usd:
-            if let remaining = bucket.remaining { components.append("$\(number(remaining, maximumFractionDigits: 2)) remaining") }
-            else if let used = bucket.used { components.append("$\(number(used, maximumFractionDigits: 2)) used") }
+            if let remaining = bucket.remaining {
+                components.append("$\(number(remaining, maximumFractionDigits: 2)) remaining")
+            } else if let used = bucket.used, let limit = bucket.limit {
+                components.append("$\(number(used, maximumFractionDigits: 2)) / $\(number(limit, maximumFractionDigits: 2))")
+            } else if let used = bucket.used {
+                components.append("$\(number(used, maximumFractionDigits: 2)) used")
+            }
         default:
             if let used = bucket.used, let limit = bucket.limit {
                 components.append("\(number(used, maximumFractionDigits: 2)) / \(number(limit, maximumFractionDigits: 2)) \(bucket.unit.rawValue)")
@@ -87,13 +92,15 @@ enum CLITextFormatter {
 }
 
 private struct CLIJSONEnvelope: Encodable {
-    let schemaVersion = 1
+    // 2: Cursor's spend bucket id changed from "on-demand" to "spend".
+    let schemaVersion = 2
     let generatedAt: Date
     let snapshots: [UsageSnapshot]
 }
 
 private struct CLIDoctorEnvelope: Encodable {
-    let schemaVersion = 1
+    // 2: availability gained "blocked".
+    let schemaVersion = 2
     let generatedAt: Date
     let credentials: [CredentialStatus]
 }

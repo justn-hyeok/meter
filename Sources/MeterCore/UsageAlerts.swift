@@ -37,17 +37,21 @@ public struct UsageAlertTracker: Sendable {
             for bucket in snapshot.buckets {
                 guard let percentage = bucket.percentageUsed else { continue }
                 let key = "\(snapshot.provider.rawValue)/\(bucket.id)"
-                let reached = thresholds.last { Double($0) <= percentage }
-
-                // A new window, or usage that fell back below what was announced, re-arms
-                // the bucket so the next crossing is reported again.
-                if let previous = fired[key],
-                   previous.resetAt != bucket.resetAt || (reached ?? 0) < previous.threshold {
+                // A new window starts the bucket over.
+                if let previous = fired[key], previous.resetAt != bucket.resetAt {
                     fired[key] = nil
                 }
 
-                guard let reached else { continue }
-                if let previous = fired[key], previous.threshold >= reached { continue }
+                guard let reached = thresholds.last(where: { Double($0) <= percentage }) else {
+                    // Back under every threshold: the next crossing is worth announcing again.
+                    fired[key] = nil
+                    continue
+                }
+
+                // Only an escalation is news. Rolling windows decay as old usage ages out, so
+                // sliding from the 95 band back into the 80 band is not a crossing, and
+                // announcing it made an oscillating window notify on every refresh forever.
+                if let previous = fired[key], reached <= previous.threshold { continue }
 
                 fired[key] = Fired(threshold: reached, resetAt: bucket.resetAt)
                 alerts.append(.init(

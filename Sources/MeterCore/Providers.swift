@@ -1,5 +1,44 @@
 import Foundation
 
+/// One numeric reader for every parser here. There were five copies and they had begun to
+/// drift apart.
+private func numericValue(_ value: Any?) -> Double? {
+    if let number = value as? NSNumber { return number.doubleValue }
+    if let string = value as? String { return Double(string) }
+    return nil
+}
+
+enum ProviderHTTPError: LocalizedError, Equatable {
+    case unexpectedStatus(Int)
+
+    var errorDescription: String? {
+        switch self {
+        // A 404 is how a private route announces it has moved; collapsing it into a generic
+        // failure hid exactly the signal worth acting on.
+        case .unexpectedStatus(let code): "provider returned HTTP \(code)"
+        }
+    }
+}
+
+/// Credentials belong to the host that issued them, which is what the README promises.
+/// URLSession would otherwise replay the Authorization and Cookie headers to wherever a
+/// 3xx points.
+private final class SameHostRedirectsOnly: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let origin = task.originalRequest?.url?.host, request.url?.host == origin else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+}
+
 private struct CodexAuth: Decodable {
     struct Tokens: Decodable {
         let accessToken: String
@@ -14,6 +53,10 @@ private struct CodexAuth: Decodable {
 }
 
 struct CodexUsageProvider: UsageProvider {
+    static var authFile: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex/auth.json")
+    }
+
     let id = ProviderID.codex
 
     func fetch() async -> UsageSnapshot {
@@ -25,8 +68,7 @@ struct CodexUsageProvider: UsageProvider {
 
     private func fetchFromBackend() async -> UsageSnapshot {
         do {
-            let url = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex/auth.json")
-            let auth = try JSONDecoder().decode(CodexAuth.self, from: Data(contentsOf: url))
+            let auth = try JSONDecoder().decode(CodexAuth.self, from: Data(contentsOf: CodexUsageProvider.authFile))
             var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
             request.timeoutInterval = 15
             request.setValue("Bearer \(auth.tokens.accessToken)", forHTTPHeaderField: "Authorization")
@@ -115,7 +157,13 @@ struct CodexAppServerBridge: Sendable {
         }.value
     }
 
-    private func executableURL() throws -> URL {
+    func executableURL() throws -> URL {
+        guard let url = Self.locateExecutable() else { throw CodexAppServerError.executableNotFound }
+        return url
+    }
+
+    /// Shared with `meter doctor` so it checks the path a fetch actually takes.
+    static func locateExecutable() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let candidates = [
             ProcessInfo.processInfo.environment["CODEX_CLI_PATH"],
@@ -127,7 +175,7 @@ struct CodexAppServerBridge: Sendable {
             home.appending(path: ".local/share/mise/shims/codex").path,
         ].compactMap { $0 }
         guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            throw CodexAppServerError.executableNotFound
+            return nil
         }
         return URL(fileURLWithPath: path)
     }
@@ -158,11 +206,11 @@ enum CodexAppServerUsageParser {
     }
 
     private static func appendWindow(_ window: [String: Any]?, id: String, name: String?, to output: inout [UsageBucket]) {
-        guard let window, let used = number(window["usedPercent"]) else { return }
-        let minutes = number(window["windowDurationMins"])
+        guard let window, let used = numericValue(window["usedPercent"]) else { return }
+        let minutes = numericValue(window["windowDurationMins"])
         let windowName = minutes.map(label(for:)) ?? "Limit"
         let label = name.map { "\($0) \(windowName)" } ?? windowName
-        let reset = number(window["resetsAt"]).map { Date(timeIntervalSince1970: $0) }
+        let reset = numericValue(window["resetsAt"]).map { Date(timeIntervalSince1970: $0) }
         output.append(.init(id: id, label: label, used: used, limit: 100, remaining: max(0, 100 - used), resetAt: reset, unit: .percent))
     }
 
@@ -177,11 +225,6 @@ enum CodexAppServerUsageParser {
         }
     }
 
-    private static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
-        return nil
-    }
 }
 
 enum CodexUsageParser {
@@ -197,7 +240,7 @@ enum CodexUsageParser {
             appendWindow(additional["rate_limit"] as? [String: Any], prefix: "additional-\(index)-\(feature)", labelPrefix: name, to: &buckets)
         }
         if let credits = root["credits"] as? [String: Any] {
-            let balance = number(credits["balance"])
+            let balance = numericValue(credits["balance"])
             buckets.append(.init(id: "credits", label: "Credits", used: nil, limit: nil, remaining: balance, resetAt: nil, unit: .credits))
         }
         guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
@@ -208,18 +251,13 @@ enum CodexUsageParser {
         guard let value else { return }
         for (key, windowLabel) in [("primary_window", "5-hour"), ("secondary_window", "Weekly")] {
             guard let window = value[key] as? [String: Any] else { continue }
-            let used = number(window["used_percent"])
-            let reset = number(window["reset_at"]).map { Date(timeIntervalSince1970: $0) }
+            let used = numericValue(window["used_percent"])
+            let reset = numericValue(window["reset_at"]).map { Date(timeIntervalSince1970: $0) }
             let label = labelPrefix.map { "\($0) \(windowLabel)" } ?? windowLabel
             output.append(.init(id: "\(prefix)-\(key)", label: label, used: used, limit: 100, remaining: used.map { max(0, 100 - $0) }, resetAt: reset, unit: .percent))
         }
     }
 
-    private static func number(_ value: Any?) -> Double? {
-        if let n = value as? NSNumber { return n.doubleValue }
-        if let s = value as? String { return Double(s) }
-        return nil
-    }
 }
 
 struct DeepSeekUsageProvider: UsageProvider {
@@ -297,12 +335,12 @@ enum AuthenticatedRequest {
             request.setValue(value, forHTTPHeaderField: field)
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request, delegate: SameHostRedirectsOnly())
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         switch http.statusCode {
         case 200..<300: return data
         case 401, 403: throw CredentialError.signInRequired(signInAt)
-        default: throw URLError(.badServerResponse)
+        default: throw ProviderHTTPError.unexpectedStatus(http.statusCode)
         }
     }
 }
@@ -346,7 +384,7 @@ enum CursorUsageParser {
         // Cursor moved totalSpend from spendLimitUsage into planUsage; read both so the
         // bucket does not silently disappear when the dashboard shape changes again.
         let spendSources = [usage, root["spendLimitUsage"] as? [String: Any]].compactMap { $0 }
-        if let cents = spendSources.lazy.compactMap({ number($0["totalSpend"]) }).first {
+        if let cents = spendSources.lazy.compactMap({ numericValue($0["totalSpend"]) }).first {
             // Deliberately no limit: planUsage.limit is the plan's included allowance, while
             // totalSpend also counts the bonus usage Cursor grants on top, so dividing one by
             // the other reports several hundred percent and would peg the menu bar gauge.
@@ -361,18 +399,13 @@ enum CursorUsageParser {
     }
 
     private static func appendPercent(_ value: Any?, id: String, label: String, to output: inout [UsageBucket]) {
-        guard let used = number(value) else { return }
+        guard let used = numericValue(value) else { return }
         output.append(.init(id: id, label: label, used: used, limit: 100, remaining: max(0, 100 - used), resetAt: nil, unit: .percent))
     }
 
-    private static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
-        return nil
-    }
 
     private static func milliseconds(_ value: Any?) -> Date? {
-        number(value).map { Date(timeIntervalSince1970: $0 / 1_000) }
+        numericValue(value).map { Date(timeIntervalSince1970: $0 / 1_000) }
     }
 }
 
@@ -387,11 +420,12 @@ struct CommandCodeUsageProvider: UsageProvider {
     func fetch() async -> UsageSnapshot {
         do {
             // The same routes Command Code's own CLI calls, with the same API key.
-            let credits = try await request("https://api.commandcode.ai/alpha/billing/credits")
-            let summary = try await request("https://api.commandcode.ai/alpha/usage/summary")
+            // Two independent reads; sequential awaits doubled the worst case to 30s.
+            async let credits = request("https://api.commandcode.ai/alpha/billing/credits")
+            async let summary = request("https://api.commandcode.ai/alpha/usage/summary")
             let combined = try JSONSerialization.data(withJSONObject: [
-                "credits": try JSONSerialization.jsonObject(with: credits),
-                "summary": try JSONSerialization.jsonObject(with: summary),
+                "credits": try JSONSerialization.jsonObject(with: try await credits),
+                "summary": try JSONSerialization.jsonObject(with: try await summary),
             ])
             return try CommandCodeUsageParser.parse(combined)
         } catch {
@@ -414,7 +448,7 @@ enum CommandCodeUsageParser {
             throw URLError(.cannotParseResponse)
         }
         var buckets: [UsageBucket] = []
-        if let remaining = number(credits["monthlyCredits"]), let used = number(summary["totalMonthlyCredits"]) {
+        if let remaining = numericValue(credits["monthlyCredits"]), let used = numericValue(summary["totalMonthlyCredits"]) {
             buckets.append(.init(id: "monthly", label: "Monthly credits", used: used, limit: used + remaining, remaining: remaining, resetAt: nil, unit: .credits))
         }
         appendWindow(windows["fiveHour"] as? [String: Any], id: "five-hour", label: "5-hour", to: &buckets)
@@ -424,16 +458,11 @@ enum CommandCodeUsageParser {
     }
 
     private static func appendWindow(_ value: [String: Any]?, id: String, label: String, to output: inout [UsageBucket]) {
-        guard let value, let used = number(value["used"]), let cap = number(value["cap"]) else { return }
-        let resetMilliseconds = number(value["resetAt"]).flatMap { $0 > 0 ? $0 : nil }
+        guard let value, let used = numericValue(value["used"]), let cap = numericValue(value["cap"]) else { return }
+        let resetMilliseconds = numericValue(value["resetAt"]).flatMap { $0 > 0 ? $0 : nil }
         output.append(.init(id: id, label: label, used: used, limit: cap, remaining: max(0, cap - used), resetAt: resetMilliseconds.map { Date(timeIntervalSince1970: $0 / 1_000) }, unit: .credits))
     }
 
-    private static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
-        return nil
-    }
 }
 
 struct ClaudeUsageProvider: UsageProvider {
@@ -468,10 +497,15 @@ enum ClaudeUsageParser {
         // top-level keys next to it, which come and go as plans change.
         var buckets: [UsageBucket] = []
         for limit in root["limits"] as? [[String: Any]] ?? [] {
-            guard let kind = limit["kind"] as? String, let percent = number(limit["percent"]) else { continue }
-            let model = ((limit["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String
+            guard let kind = limit["kind"] as? String, let percent = numericValue(limit["percent"]) else { continue }
+            let scope = limit["scope"] as? [String: Any]
+            let model = (scope?["model"] as? [String: Any])?["display_name"] as? String
+            // Two limits of the same kind can differ only by surface; without it they collide
+            // into one SwiftUI id, one alert key and one notification.
+            let surface = (scope?["surface"] as? [String: Any])?["display_name"] as? String
+                ?? scope?["surface"] as? String
             buckets.append(.init(
-                id: [kind, model].compactMap { $0 }.joined(separator: "-").lowercased(),
+                id: [kind, model, surface].compactMap { $0 }.joined(separator: "-").lowercased(),
                 label: label(kind: kind, model: model),
                 used: percent,
                 limit: 100,
@@ -484,13 +518,13 @@ enum ClaudeUsageParser {
         if let spend = root["spend"] as? [String: Any],
            spend["enabled"] as? Bool == true,
            let used = spend["used"] as? [String: Any],
-           let minor = number(used["amount_minor"]) {
-            let exponent = number(used["exponent"]) ?? 2
+           let minor = numericValue(used["amount_minor"]) {
+            let exponent = numericValue(used["exponent"]) ?? 2
             buckets.append(.init(
                 id: "spend",
                 label: "Extra usage",
                 used: minor / pow(10, exponent),
-                limit: number(spend["limit"]).map { $0 / pow(10, exponent) },
+                limit: numericValue(spend["limit"]).map { $0 / pow(10, exponent) },
                 remaining: nil,
                 resetAt: nil,
                 unit: .usd
@@ -521,9 +555,4 @@ enum ClaudeUsageParser {
         return fractional.date(from: text) ?? plain.date(from: text)
     }
 
-    private static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
-        return nil
-    }
 }

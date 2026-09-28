@@ -105,9 +105,9 @@ Meter then calls the same `alpha/billing/credits` and `alpha/usage/summary` rout
 
 - **Codex unavailable:** Sign in through the Codex app or CLI, then refresh Meter.
 - **Cursor unavailable:** Sign in to the Cursor app, then refresh Meter.
-- **Command Code unavailable:** Sign in at `commandcode.ai` in a supported browser, then run `meter doctor` to see what Meter found.
+- **Command Code unavailable:** Run `cmd login`, or give Meter a key with `meter set-key command-code`.
 - **A keychain prompt on every launch:** the build is ad-hoc signed, so each rebuild is a new identity. See [Signing](#signing).
-- **DeepSeek unavailable:** Confirm the process that launched Meter contains `DEEPSEEK_API_KEY`.
+- **DeepSeek unavailable:** Run `meter set-key deepseek`. `DEEPSEEK_API_KEY` works for the CLI but an app launched from Finder never sees it, which `meter doctor` reports as `blocked`.
 - **No Dock icon:** This is expected; use the gauge icon in the menu bar.
 
 ## Development
@@ -152,7 +152,7 @@ With no provider argument, `meter` queries the providers enabled in the shared s
 
 `meter set-key <provider>` stores an API key for the providers whose credential Meter cannot find on the machine, reading it from stdin; `meter clear-key <provider>` removes it. `meter doctor` reports where each credential comes from and whether it is present. It makes no network request and never shows a keychain prompt, so it stays usable when a provider is broken. With `--strict` it exits 1 when an enabled provider has no credential.
 
-The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`.
+The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`.
 
 The v0.3.1 release also includes `meter-0.3.1-macos-universal.zip`. Extract it and move `meter` to a directory on your `PATH`, or build and install it into `~/.local/bin` from this checkout:
 

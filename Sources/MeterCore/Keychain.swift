@@ -44,13 +44,30 @@ public enum Keychain {
         }
     }
 
-    /// Whether the item exists, without reading its secret.
+    public enum Presence: Equatable, Sendable {
+        case present
+        case missing
+        /// The item is there but this process may not be able to read it - a locked
+        /// keychain, or a grant that a rebuild revoked.
+        case blocked
+        case unknown(OSStatus)
+    }
+
+    /// Looks for the item without reading its secret.
     ///
-    /// Asking only for attributes does not touch the item's access control, so this
-    /// never shows a permission prompt. `meter doctor` relies on that.
-    public static func exists(service: String) -> Bool {
+    /// Asking only for attributes does not touch the item's access control, so this never
+    /// shows a permission prompt, which is what makes it safe for `meter doctor`. The
+    /// tradeoff is that a denied ACL still answers `present`; only a locked or
+    /// non-interactive keychain is distinguishable here.
+    public static func probe(service: String) -> Presence {
         var item: CFTypeRef?
-        return SecItemCopyMatching(query(service: service, returnData: false), &item) == errSecSuccess
+        let status = SecItemCopyMatching(query(service: service, returnData: false), &item)
+        switch status {
+        case errSecSuccess: return .present
+        case errSecItemNotFound: return .missing
+        case errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled: return .blocked
+        default: return .unknown(status)
+        }
     }
 
     private static func query(service: String, returnData: Bool) -> CFDictionary {

@@ -1,4 +1,3 @@
-import CommonCrypto
 import Foundation
 import Testing
 @testable import MeterCore
@@ -10,30 +9,6 @@ private func unsignedJWT(_ claims: [String: Any]) throws -> String {
         .replacingOccurrences(of: "/", with: "_")
         .replacingOccurrences(of: "=", with: "")
     return "header.\(encoded).signature"
-}
-
-/// Mirrors Chromium's cookie encryption so the jar can be tested without a browser.
-private func chromiumEncrypted(_ plaintext: Data, key: Data) -> Data {
-    let iv = [UInt8](repeating: 0x20, count: kCCBlockSizeAES128)
-    var output = Data(count: plaintext.count + kCCBlockSizeAES128)
-    var moved = 0
-    _ = output.withUnsafeMutableBytes { outputBytes in
-        key.withUnsafeBytes { keyBytes in
-            plaintext.withUnsafeBytes { inputBytes in
-                CCCrypt(
-                    CCOperation(kCCEncrypt),
-                    CCAlgorithm(kCCAlgorithmAES),
-                    CCOptions(kCCOptionPKCS7Padding),
-                    keyBytes.baseAddress, key.count,
-                    iv,
-                    inputBytes.baseAddress, plaintext.count,
-                    outputBytes.baseAddress, outputBytes.count,
-                    &moved
-                )
-            }
-        }
-    }
-    return Data("v10".utf8) + output.prefix(moved)
 }
 
 @Test func readsSubjectAndExpiryFromJWTPayload() throws {
@@ -64,47 +39,3 @@ private func chromiumEncrypted(_ plaintext: Data, key: Data) -> Data {
     #expect(throws: KeychainError.notFound("cursor-access-token")) { try credential.authHeaders() }
 }
 
-@Test func derivesTheChromiumCookieKeyWithFixedParameters() throws {
-    let key = try ChromiumCookieJar.derivedKey(password: "safe-storage-password")
-    #expect(key.count == 16)
-    // Same password must always give the same key, or cached grants would break.
-    #expect(key == (try ChromiumCookieJar.derivedKey(password: "safe-storage-password")))
-    #expect(key != (try ChromiumCookieJar.derivedKey(password: "other-password")))
-}
-
-@Test func decryptsChromiumCookieValues() throws {
-    let key = try ChromiumCookieJar.derivedKey(password: "safe-storage-password")
-    let encrypted = chromiumEncrypted(Data("user_01ABC::token.value".utf8), key: key)
-    #expect(try ChromiumCookieJar.decrypt(encrypted, key: key) == "user_01ABC::token.value")
-}
-
-@Test func stripsTheDomainHashNewerChromiumPrepends() throws {
-    let key = try ChromiumCookieJar.derivedKey(password: "safe-storage-password")
-    var plaintext = Data(repeating: 0x00, count: 32) // stands in for SHA-256 of the domain
-    plaintext.append(Data("session-value".utf8))
-    let encrypted = chromiumEncrypted(plaintext, key: key)
-    #expect(try ChromiumCookieJar.decrypt(encrypted, key: key) == "session-value")
-}
-
-@Test func rejectsCookieFormatsItCannotDecrypt() throws {
-    let key = try ChromiumCookieJar.derivedKey(password: "safe-storage-password")
-    #expect(throws: CookieJarError.undecryptable("unsupported cookie format")) {
-        try ChromiumCookieJar.decrypt(Data("v20ciphertext".utf8), key: key)
-    }
-}
-
-@Test func tellsSessionCookiesApartFromAnalyticsCookies() {
-    #expect(ChromiumCookieJar.isSessionLike("WorkosCursorSessionToken"))
-    #expect(ChromiumCookieJar.isSessionLike("sessionKey"))
-    #expect(ChromiumCookieJar.isSessionLike("__Host-console_session"))
-    // The names actually found for commandcode.ai, none of which prove a login.
-    for analytics in ["_ga", "_ga_K247DYR4NS", "_fbp", "_rdt_uuid", "_twpid", "_twsid", "__stripe_mid"] {
-        #expect(!ChromiumCookieJar.isSessionLike(analytics))
-    }
-}
-
-@Test func reportsACredentialStatusForEveryProvider() {
-    let statuses = CredentialDoctor.diagnose()
-    #expect(statuses.map(\.provider) == ProviderID.allCases)
-    #expect(statuses.allSatisfy { !$0.source.isEmpty && !$0.detail.isEmpty })
-}

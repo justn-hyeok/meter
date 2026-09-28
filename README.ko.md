@@ -104,9 +104,9 @@ Meter는 그 CLI가 쓰는 것과 동일한 `alpha/billing/credits`·`alpha/usag
 
 - **Codex를 사용할 수 없음:** Codex 앱 또는 CLI에서 로그인한 뒤 Meter를 새로고침합니다.
 - **Cursor를 사용할 수 없음:** Cursor 앱에 로그인한 뒤 Meter를 새로고침합니다.
-- **Command Code를 사용할 수 없음:** 지원되는 브라우저에서 `commandcode.ai`에 로그인한 뒤 `meter doctor`로 Meter가 무엇을 찾았는지 확인합니다.
+- **Command Code를 사용할 수 없음:** `cmd login`으로 로그인하거나 `meter set-key command-code`로 키를 지정합니다.
 - **실행할 때마다 키체인 프롬프트가 뜸:** ad-hoc 서명 빌드라 리빌드마다 신원이 바뀌기 때문입니다. [서명](#서명)을 참고하세요.
-- **DeepSeek을 사용할 수 없음:** Meter를 실행한 프로세스 환경에 `DEEPSEEK_API_KEY`가 있는지 확인합니다.
+- **DeepSeek을 사용할 수 없음:** `meter set-key deepseek`을 실행합니다. `DEEPSEEK_API_KEY`는 CLI에서는 동작하지만 Finder에서 실행한 앱은 볼 수 없으며, `meter doctor`가 이를 `blocked`로 보고합니다.
 - **Dock 아이콘이 없음:** 정상 동작입니다. 메뉴바의 게이지 아이콘을 사용하세요.
 
 ## 개발
@@ -151,7 +151,7 @@ swift run meter disable deepseek
 
 `meter set-key <provider>`는 Meter가 이 맥에서 찾을 수 없는 제공자의 API 키를 stdin에서 읽어 저장하고, `meter clear-key <provider>`는 지웁니다. `meter doctor`는 각 자격 증명의 출처와 존재 여부를 보고합니다. 네트워크 요청을 하지 않고 키체인 프롬프트도 띄우지 않으므로 제공자가 고장난 상태에서도 사용할 수 있습니다. `--strict`와 함께 쓰면 활성화된 제공자에 자격 증명이 없을 때 1을 반환합니다.
 
-기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다.
+기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다.
 
 v0.3.1 릴리즈에는 `meter-0.3.1-macos-universal.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기거나, 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 

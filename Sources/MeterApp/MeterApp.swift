@@ -20,6 +20,7 @@ struct MeterApp: App {
     }
 
     private var icon: String {
+        if store.isAllUnavailable { return "exclamationmark.triangle" }
         guard let usage = store.highestUsage else { return "gauge.with.dots.needle.0percent" }
         if usage >= 0.95 { return "gauge.with.dots.needle.100percent" }
         if usage >= 0.8 { return "gauge.with.dots.needle.67percent" }
@@ -104,18 +105,32 @@ private struct KeyField: View {
     let provider: ProviderID
     @Bindable var store: UsageStore
     @State private var key = ""
+    @State private var failure: String?
+
+    private var hasKey: Bool { store.hasStoredKey(for: provider) }
 
     var body: some View {
-        HStack(spacing: 6) {
-            SecureField("API key", text: $key)
-                .textFieldStyle(.roundedBorder)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                SecureField(hasKey ? "Replace key" : "API key", text: $key)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                Button("Save") {
+                    do {
+                        try store.storeKey(key, for: provider)
+                        key = ""
+                        failure = nil
+                    } catch {
+                        // Keep what was typed: the save is what failed, not the key.
+                        failure = error.localizedDescription
+                    }
+                }
                 .controlSize(.small)
-            Button("Save") {
-                store.storeKey(key, for: provider)
-                key = ""
+                .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .controlSize(.small)
-            .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if let failure {
+                Text(failure).foregroundStyle(.red)
+            }
         }
         .font(.caption)
     }
@@ -140,7 +155,7 @@ private struct ProviderCard: View {
                     Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if provider.acceptsStoredKey, !store.hasStoredKey(for: provider) {
+                if provider.acceptsStoredKey {
                     KeyField(provider: provider, store: store)
                 }
             }

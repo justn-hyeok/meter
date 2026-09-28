@@ -49,7 +49,11 @@ public struct UsageBucket: Identifiable, Codable, Sendable, Equatable {
 
     public var percentageUsed: Double? {
         if unit == .percent, let used { return min(max(used, 0), 100) }
-        guard let used, let limit, limit > 0 else { return nil }
+        // Money is reported as money. Twice a dollar figure was paired with a "limit" that
+        // was not a spending cap - Cursor's plan allowance against bonus-inclusive spend,
+        // Claude's extra-usage cap - and the ratio drove the menu bar needle. A spend gauge
+        // needs its own deliberate design, not this accident.
+        guard unit != .usd, let used, let limit, limit > 0 else { return nil }
         return min(max(used / limit * 100, 0), 100)
     }
 

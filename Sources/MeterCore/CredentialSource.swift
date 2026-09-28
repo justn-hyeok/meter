@@ -119,23 +119,3 @@ public struct CommandCodeAPIKeyCredential: CredentialSource {
         return ["Authorization": "Bearer \(key)"]
     }
 }
-
-/// A browser session, read straight from a Chromium profile's cookie store.
-public struct BrowserSessionCredential: CredentialSource {
-    public let host: String
-    private let browsers: [ChromiumBrowser]
-
-    public init(host: String, browsers: [ChromiumBrowser] = ChromiumBrowser.supported) {
-        self.host = host
-        self.browsers = browsers
-    }
-
-    public var sourceDescription: String { "browser cookies for \(host)" }
-
-    public func authHeaders() throws -> [String: String] {
-        guard let jar = ChromiumCookieJar.first(hosting: host, in: browsers) else {
-            throw CookieJarError.noCookies(host)
-        }
-        return ["Cookie": try jar.cookieHeader(host: host)]
-    }
-}

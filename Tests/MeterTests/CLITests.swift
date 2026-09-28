@@ -36,7 +36,7 @@ import Testing
     )
 
     let output = try CLIJSONFormatter.status([snapshot], now: now)
-    #expect(output.contains(#""schemaVersion" : 1"#))
+    #expect(output.contains(#""schemaVersion" : 2"#))
     #expect(output.contains(#""provider" : "codex""#))
     #expect(output.contains("2023-11-14T22:13:20Z"))
 }
@@ -84,16 +84,16 @@ private struct StubProvider: UsageProvider {
         .init(provider: .cursor, source: "keychain cursor-access-token", availability: .ready, detail: "present"),
         .init(
             provider: .commandCode,
-            source: "browser cookies for commandcode.ai",
+            source: "COMMAND_CODE_API_KEY, stored key, or its CLI login",
             availability: .missing,
-            detail: "sign in at commandcode.ai"
+            detail: "run 'meter set-key command-code'"
         ),
     ])
     let lines = output.split(separator: "\n")
     #expect(lines.count == 2)
     #expect(lines[0].hasPrefix("ready    cursor"))
     #expect(lines[1].hasPrefix("missing  command-code"))
-    #expect(lines[1].hasSuffix("sign in at commandcode.ai"))
+    #expect(lines[1].hasSuffix("run 'meter set-key command-code'"))
 }
 
 @Test func parsesKeyCommands() throws {
