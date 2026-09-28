@@ -85,37 +85,24 @@ public enum CredentialDoctor {
     }
 
     private static func commandCode() -> CredentialStatus {
-        let host = CommandCodeUsageProvider.host
-        let source = "browser cookies for \(host)"
-        let installed = ChromiumBrowser.supported.filter(\.isInstalled)
-        guard !installed.isEmpty else {
+        let environment = ProcessInfo.processInfo.environment
+        let credential = CommandCodeAPIKeyCredential()
+        guard credential.apiKey() != nil else {
             return .init(
                 provider: .commandCode,
-                source: source,
+                source: "Command Code API key",
                 availability: .missing,
-                detail: "no supported browser is installed"
+                detail: "run 'cmd login' or 'meter set-key command-code'"
             )
         }
-
-        var inventory: [String] = []
-        for browser in installed {
-            let names = ChromiumCookieJar(browser: browser).cookieNames(host: host) ?? []
-            let session = names.filter(ChromiumCookieJar.isSessionLike)
-            if !session.isEmpty {
-                return .init(
-                    provider: .commandCode,
-                    source: source,
-                    availability: .ready,
-                    detail: "\(browser.name) holds \(session.count) session cookie(s)"
-                )
-            }
-            inventory.append("\(browser.name) \(names.count) cookie(s), none session-like")
+        let detail: String
+        if !(environment[CommandCodeAPIKeyCredential.environmentKey] ?? "").isEmpty {
+            detail = "set in this process"
+        } else if SecretStore.default.hasSecret(for: .commandCode) {
+            detail = "stored key present"
+        } else {
+            detail = "from ~/.commandcode/auth.json"
         }
-        return .init(
-            provider: .commandCode,
-            source: source,
-            availability: .missing,
-            detail: "sign in at \(host) — " + inventory.joined(separator: "; ")
-        )
+        return .init(provider: .commandCode, source: "Command Code API key", availability: .ready, detail: detail)
     }
 }

@@ -26,10 +26,10 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 - A Claude Code login for Claude subscription usage
 - The Cursor desktop app, signed in, for Cursor usage
 - A DeepSeek API key, pasted into Meter or left in `DEEPSEEK_API_KEY`, for DeepSeek balance
-- A Chromium browser (Aside, Chrome, Dia, Brave, or Edge) signed in to Command Code
+- A Command Code CLI login, or `COMMAND_CODE_API_KEY`, for Command Code usage
 - A code signing certificate, so keychain permission survives rebuilds — see [Signing](#signing)
 
-Codex, Claude, and DeepSeek are enabled by default. Cursor and Command Code are disabled by default and can be enabled from the Meter menu or with `meter enable`.
+Every provider except Cursor is enabled by default. Cursor needs its desktop app installed, so it is the one you opt into, from the Meter menu or with `meter enable cursor`.
 
 Run `meter doctor` to see where each credential comes from and whether it is present. No browser needs to be installed or running for any provider.
 
@@ -83,19 +83,19 @@ The collector uses DeepSeek's official `/user/balance` endpoint. Balance-only da
 
 ### Command Code GOAT
 
-1. Sign in to `https://commandcode.ai` in a supported Chromium browser.
-2. Enable **Command Code GOAT** in Meter or run `meter enable command-code`.
-3. Choose **Always Allow** for that browser's Safe Storage keychain item.
+Sign in once with Command Code's own CLI:
 
-Meter reads the browser's cookie store from disk, decrypts it with that key, and calls the credits and usage-summary endpoints itself. The browser does not need to be running.
+```sh
+cmd login
+```
 
-**Known limitation, not being pursued:** the dashboard endpoints reject API keys, Command Code publishes no usage endpoint, its CLI only renders usage inside an interactive session, and the browser profiles checked hold nothing but analytics cookies for `commandcode.ai` - the session lives in local storage. The only route left is its private `internal/` endpoints, which is not somewhere Meter is going to grow new machinery to reach. The provider reports as unavailable, and `meter doctor` prints the cookie inventory it found.
+Meter then calls the same `alpha/billing/credits` and `alpha/usage/summary` routes that CLI uses, with the same API key. It looks for the key in `COMMAND_CODE_API_KEY`, then in a key handed to Meter with `meter set-key command-code`, then in `~/.commandcode/auth.json`. No browser is involved, and nothing needs to be running.
 
 ## Privacy and reliability
 
 - Credentials, cookies, and tokens are never written to logs.
-- Sessions are read from the local keychain and from browser cookie stores, and are sent only to the service that issued them.
-- Cookie stores are opened read-only and immutable, so a running browser is never disturbed.
+- Credentials are read from the local keychain, from files the vendors' own CLIs write, and from keys you give Meter, and are sent only to the service that issued them.
+- Every provider is reached through the API its own first-party client uses.
 - JWTs are read for their `sub` claim only. Meter never verifies, mints, or forwards a token elsewhere.
 - Cursor and Command Code use private dashboard endpoints and may require maintenance if those dashboards change.
 - A failed refresh keeps the last successful snapshot and marks it stale instead of erasing it.

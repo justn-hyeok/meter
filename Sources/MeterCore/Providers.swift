@@ -377,19 +377,18 @@ enum CursorUsageParser {
 }
 
 struct CommandCodeUsageProvider: UsageProvider {
-    static let host = "commandcode.ai"
-
     let id = ProviderID.commandCode
     private let credential: any CredentialSource
 
-    init(credential: any CredentialSource = BrowserSessionCredential(host: CommandCodeUsageProvider.host)) {
+    init(credential: any CredentialSource = CommandCodeAPIKeyCredential()) {
         self.credential = credential
     }
 
     func fetch() async -> UsageSnapshot {
         do {
-            let credits = try await request("https://api.commandcode.ai/internal/billing/credits")
-            let summary = try await request("https://api.commandcode.ai/internal/usage/summary")
+            // The same routes Command Code's own CLI calls, with the same API key.
+            let credits = try await request("https://api.commandcode.ai/alpha/billing/credits")
+            let summary = try await request("https://api.commandcode.ai/alpha/usage/summary")
             let combined = try JSONSerialization.data(withJSONObject: [
                 "credits": try JSONSerialization.jsonObject(with: credits),
                 "summary": try JSONSerialization.jsonObject(with: summary),
@@ -401,12 +400,7 @@ struct CommandCodeUsageProvider: UsageProvider {
     }
 
     private func request(_ url: String) async throws -> Data {
-        try await AuthenticatedRequest.json(
-            url,
-            origin: "https://\(Self.host)",
-            credential: credential,
-            signInAt: Self.host
-        )
+        try await AuthenticatedRequest.json(url, credential: credential, signInAt: "commandcode.ai")
     }
 }
 
@@ -426,7 +420,7 @@ enum CommandCodeUsageParser {
         appendWindow(windows["fiveHour"] as? [String: Any], id: "five-hour", label: "5-hour", to: &buckets)
         appendWindow(windows["weekly"] as? [String: Any], id: "weekly", label: "Weekly", to: &buckets)
         guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
-        return .init(provider: .commandCode, buckets: buckets, fetchedAt: now, source: "Command Code dashboard", state: .live, message: nil)
+        return .init(provider: .commandCode, buckets: buckets, fetchedAt: now, source: "Command Code API", state: .live, message: nil)
     }
 
     private static func appendWindow(_ value: [String: Any]?, id: String, label: String, to output: inout [UsageBucket]) {

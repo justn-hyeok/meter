@@ -78,3 +78,68 @@ private func temporaryStore() -> (SecretStore, URL, () -> Void) {
     let blankEnvironment = DeepSeekUsageProvider(store: store, environment: ["DEEPSEEK_API_KEY": ""])
     #expect(blankEnvironment.apiKey() == "sk-stored")
 }
+
+private func temporaryAuthFile(_ contents: String?) -> (URL, () -> Void) {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appending(path: "MeterTests-\(UUID().uuidString)")
+    let file = directory.appending(path: "auth.json")
+    if let contents {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? Data(contents.utf8).write(to: file)
+    }
+    return (file, { try? FileManager.default.removeItem(at: directory) })
+}
+
+@Test func commandCodePrefersExplicitKeysOverTheOneItsCLILoggedInWith() throws {
+    let (store, _, cleanupStore) = temporaryStore()
+    defer { cleanupStore() }
+    let (authFile, cleanupAuth) = temporaryAuthFile(#"{"apiKey":"key-from-cli","userId":"u"}"#)
+    defer { cleanupAuth() }
+
+    func credential(environment: [String: String]) -> CommandCodeAPIKeyCredential {
+        CommandCodeAPIKeyCredential(store: store, environment: environment, cliAuthFile: authFile)
+    }
+
+    // Nothing explicit yet, so the CLI's own login is what Meter uses.
+    #expect(credential(environment: [:]).apiKey() == "key-from-cli")
+
+    try store.setSecret("key-from-user", for: .commandCode)
+    #expect(credential(environment: [:]).apiKey() == "key-from-user")
+
+    #expect(credential(environment: ["COMMAND_CODE_API_KEY": "key-from-env"]).apiKey() == "key-from-env")
+    #expect(credential(environment: ["COMMAND_CODE_API_KEY": ""]).apiKey() == "key-from-user")
+}
+
+@Test func commandCodeSendsTheKeyAsABearerToken() throws {
+    let (store, _, cleanup) = temporaryStore()
+    defer { cleanup() }
+    let (missingAuthFile, cleanupAuth) = temporaryAuthFile(nil)
+    defer { cleanupAuth() }
+
+    let credential = CommandCodeAPIKeyCredential(
+        store: store,
+        environment: ["COMMAND_CODE_API_KEY": "cc-key"],
+        cliAuthFile: missingAuthFile
+    )
+    #expect(try credential.authHeaders() == ["Authorization": "Bearer cc-key"])
+}
+
+@Test func commandCodeAsksForSignInWhenNoKeyExists() throws {
+    let (store, _, cleanup) = temporaryStore()
+    defer { cleanup() }
+    let (missingAuthFile, cleanupAuth) = temporaryAuthFile(nil)
+    defer { cleanupAuth() }
+
+    let credential = CommandCodeAPIKeyCredential(store: store, environment: [:], cliAuthFile: missingAuthFile)
+    #expect(credential.apiKey() == nil)
+    #expect(throws: CredentialError.signInRequired("commandcode.ai")) { try credential.authHeaders() }
+}
+
+@Test func everyProviderThatCanStoreAKeyIsOfferedByTheCLI() {
+    #expect(ProviderID.deepSeek.acceptsStoredKey)
+    #expect(ProviderID.commandCode.acceptsStoredKey)
+    // The rest have credentials Meter finds on the machine.
+    #expect(!ProviderID.codex.acceptsStoredKey)
+    #expect(!ProviderID.claude.acceptsStoredKey)
+    #expect(!ProviderID.cursor.acceptsStoredKey)
+}

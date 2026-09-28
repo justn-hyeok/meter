@@ -78,6 +78,48 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
     }
 }
 
+/// Command Code's own CLI authenticates with an API key, and the routes it uses accept
+/// that key, so Meter presents the same credential to the same API rather than borrowing
+/// a browser session meant for the dashboard.
+public struct CommandCodeAPIKeyCredential: CredentialSource {
+    public static let environmentKey = "COMMAND_CODE_API_KEY"
+
+    private let store: SecretStore
+    private let environment: [String: String]
+    private let cliAuthFile: URL
+
+    public init(
+        store: SecretStore = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        cliAuthFile: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".commandcode/auth.json")
+    ) {
+        self.store = store
+        self.environment = environment
+        self.cliAuthFile = cliAuthFile
+    }
+
+    public var sourceDescription: String { "Command Code API key" }
+
+    /// Explicit beats discovered: an environment variable, then a key the user handed to
+    /// Meter, then whatever the Command Code CLI already logged in with.
+    public func apiKey() -> String? {
+        if let key = environment[Self.environmentKey], !key.isEmpty { return key }
+        if let key = store.secret(for: .commandCode) { return key }
+        guard let data = try? Data(contentsOf: cliAuthFile),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let key = root["apiKey"] as? String,
+              !key.isEmpty else {
+            return nil
+        }
+        return key
+    }
+
+    public func authHeaders() throws -> [String: String] {
+        guard let key = apiKey() else { throw CredentialError.signInRequired("commandcode.ai") }
+        return ["Authorization": "Bearer \(key)"]
+    }
+}
+
 /// A browser session, read straight from a Chromium profile's cookie store.
 public struct BrowserSessionCredential: CredentialSource {
     public let host: String

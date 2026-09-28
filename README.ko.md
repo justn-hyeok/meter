@@ -26,10 +26,10 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT의 사용량과 
 - Claude 구독 사용량 조회를 위한 Claude Code 로그인
 - Cursor 사용량 조회를 위한 Cursor 데스크톱 앱 로그인
 - DeepSeek 잔액 조회를 위한 DeepSeek API 키 (Meter에 붙여넣거나 `DEEPSEEK_API_KEY`에 설정)
-- Command Code 로그인 세션이 있는 Chromium 브라우저(Aside, Chrome, Dia, Brave, Edge)
+- Command Code 사용량 조회를 위한 Command Code CLI 로그인 또는 `COMMAND_CODE_API_KEY`
 - 키체인 허용이 리빌드 후에도 유지되도록 하는 코드 서명 인증서 — [서명](#서명) 참고
 
-Codex, Claude, DeepSeek은 기본으로 켜져 있습니다. Cursor와 Command Code는 기본으로 꺼져 있으며 Meter 메뉴나 `meter enable`로 켤 수 있습니다.
+Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor는 데스크톱 앱 설치가 필요하므로 Meter 메뉴나 `meter enable cursor`로 직접 켭니다.
 
 각 자격 증명의 출처와 존재 여부는 `meter doctor`로 확인할 수 있습니다. 어떤 제공자도 브라우저가 설치되거나 실행되어 있을 필요는 없습니다.
 
@@ -82,19 +82,19 @@ meter set-key deepseek
 
 ### Command Code GOAT
 
-1. 지원되는 Chromium 브라우저에서 `https://commandcode.ai`에 로그인합니다.
-2. Meter에서 **Command Code GOAT**를 켜거나 `meter enable command-code`를 실행합니다.
-3. 해당 브라우저의 Safe Storage 키체인 항목에 **항상 허용**을 선택합니다.
+Command Code 공식 CLI로 한 번 로그인합니다.
 
-Meter는 브라우저 쿠키 저장소를 디스크에서 읽어 복호화한 뒤 크레딧 및 사용량 요약 엔드포인트를 직접 호출합니다. 브라우저가 실행 중이어야 할 필요는 없습니다.
+```sh
+cmd login
+```
 
-**알려진 제약, 더 진행하지 않음:** 대시보드 엔드포인트는 API 키를 거부하고, Command Code는 사용량 엔드포인트를 공개하지 않으며, CLI도 대화형 세션 안에서만 사용량을 보여줍니다. 확인한 브라우저 프로필에는 `commandcode.ai`의 분석용 쿠키뿐이고 세션은 로컬 스토리지에 있습니다. 남은 경로는 사설 `internal/` 엔드포인트뿐인데, 거기에 도달하기 위한 장치를 Meter에 새로 만들지는 않습니다. 이 제공자는 사용 불가로 표시되며 `meter doctor`가 발견한 쿠키 목록을 출력합니다.
+Meter는 그 CLI가 쓰는 것과 동일한 `alpha/billing/credits`·`alpha/usage/summary` 경로를 동일한 API 키로 호출합니다. 키는 `COMMAND_CODE_API_KEY`, `meter set-key command-code`로 저장한 키, `~/.commandcode/auth.json` 순으로 찾습니다. 브라우저는 관여하지 않으며 실행 중이어야 하는 것도 없습니다.
 
 ## 개인정보 보호 및 안정성
 
 - 자격 증명, 쿠키, 토큰을 로그에 남기지 않습니다.
-- 세션은 로컬 키체인과 브라우저 쿠키 저장소에서 읽으며, 발급한 서비스에만 전송됩니다.
-- 쿠키 저장소는 읽기 전용·immutable로 열기 때문에 실행 중인 브라우저를 방해하지 않습니다.
+- 자격 증명은 로컬 키체인, 각 서비스 공식 CLI가 기록한 파일, 사용자가 Meter에 준 키에서 읽으며, 발급한 서비스에만 전송됩니다.
+- 모든 제공자는 해당 서비스의 공식 클라이언트가 쓰는 API로 접근합니다.
 - JWT는 `sub` 클레임만 읽습니다. Meter는 토큰을 검증하거나 생성하거나 다른 곳으로 보내지 않습니다.
 - Cursor와 Command Code는 비공개 대시보드 엔드포인트를 사용하므로 대시보드가 변경되면 유지보수가 필요할 수 있습니다.
 - 갱신에 실패해도 마지막 정상 스냅샷을 지우지 않고 오래된 데이터로 표시합니다.

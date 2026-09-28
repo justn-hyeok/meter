@@ -32,9 +32,9 @@ public struct MeterSettings {
         defaults.set(enabled, forKey: key(for: provider))
     }
 
-    /// Providers whose credentials are already on this machine and need no setup.
+    /// Everything but Cursor, whose collector needs the desktop app installed.
     public static func defaultEnabled(_ provider: ProviderID) -> Bool {
-        provider == .codex || provider == .claude || provider == .deepSeek
+        provider != .cursor
     }
 
     private func key(for provider: ProviderID) -> String {

@@ -8,15 +8,19 @@ import Testing
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
     let settings = MeterSettings(defaults: defaults)
+    // Everything Meter can collect without extra software is on out of the box; Cursor
+    // needs its desktop app, so it is the one provider the user opts into.
     #expect(!settings.enabled(.cursor))
-    #expect(!settings.enabled(.commandCode))
+    for provider in ProviderID.allCases where provider != .cursor {
+        #expect(settings.enabled(provider))
+    }
 
     settings.setEnabled(true, for: .cursor)
-    settings.setEnabled(true, for: .commandCode)
+    settings.setEnabled(false, for: .commandCode)
     #expect(settings.enabled(.cursor))
-    #expect(settings.enabled(.commandCode))
+    #expect(!settings.enabled(.commandCode))
 
     let restored = MeterSettings(defaults: defaults)
     #expect(restored.enabled(.cursor))
-    #expect(restored.enabled(.commandCode))
+    #expect(!restored.enabled(.commandCode))
 }
