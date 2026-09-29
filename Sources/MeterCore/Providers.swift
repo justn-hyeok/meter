@@ -470,7 +470,22 @@ enum CommandCodeUsageParser {
         }
         var buckets: [UsageBucket] = []
         if let remaining = numericValue(credits["monthlyCredits"]), let used = numericValue(summary["totalMonthlyCredits"]) {
-            buckets.append(.init(id: "monthly", label: "Monthly credits", used: used, limit: used + remaining, remaining: remaining, resetAt: nil, unit: .credits))
+            // The allowance is not reported, only the balance and what this billing period has
+            // spent, so the cap has to be inferred from the pair - and that only holds while
+            // both describe the same period. Once the balance reaches zero the period has
+            // rolled: spend resets to near nothing while the balance stays at 0, and the sum
+            // collapses to a cap of a hundredth of a credit that reads as 100% used against a
+            // few thousandths actually spent. A balance with no cap is the honest answer there.
+            let cap = remaining > 0 ? used + remaining : nil
+            buckets.append(.init(
+                id: "monthly",
+                label: "Monthly credits",
+                used: cap == nil ? nil : used,
+                limit: cap,
+                remaining: remaining,
+                resetAt: nil,
+                unit: .credits
+            ))
         }
         appendWindow(windows["fiveHour"] as? [String: Any], id: "five-hour", label: "5-hour", to: &buckets)
         appendWindow(windows["weekly"] as? [String: Any], id: "weekly", label: "Weekly", to: &buckets)
