@@ -20,6 +20,11 @@ if git show-ref --verify --quiet "refs/tags/v$version"; then
     echo "error: tag v$version already exists" >&2
     exit 1
 fi
+remote_tag=$(git ls-remote --tags origin "refs/tags/v$version") || {
+    echo "error: could not check the remote tag" >&2
+    exit 1
+}
+[ -z "$remote_tag" ] || { echo "error: remote tag v$version already exists" >&2; exit 1; }
 
 echo "==> $current -> $version"
 if [ "$current" != "$version" ]; then
@@ -66,15 +71,29 @@ rm -f "$package_log"
 echo "==> publish"
 # Everything goes in. The list of folders here once left out Tests/, so from 0.4.3 on the
 # suite that passed above was never the one committed, and v0.4.16's did not even compile.
+default_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+[ -n "$default_branch" ] || { echo "error: no default branch" >&2; exit 1; }
 git add -A
-git commit -q -m "Release Meter $version" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git diff --cached --check
+git commit -q -m "Release Meter $version"
+git push -q origin HEAD:"$default_branch"
 git tag -a "v$version" -m "Meter $version"
-git push -q origin HEAD
 git push -q origin "v$version"
+
+published_notes=$(mktemp)
+trap 'rm -f "$published_notes"' EXIT HUP INT TERM
+cat "$notes" >"$published_notes"
+printf '\n## SHA-256\n\n```text\n' >>"$published_notes"
+(
+    cd dist
+    shasum -a 256 "Meter-$version-macos-universal-app.zip" \
+        "meter-$version-macos-universal-cli.zip"
+) >>"$published_notes"
+printf '```\n' >>"$published_notes"
 gh release create "v$version" \
     "dist/Meter-$version-macos-universal-app.zip" \
     "dist/meter-$version-macos-universal-cli.zip" \
-    --title "Meter $version" --notes-file "$notes"
+    --title "Meter $version" --notes-file "$published_notes"
 
 # The installed CLI is part of the release too: the app went to 0.4.14 while the `meter`
 # on PATH sat at 0.3.0, and nothing noticed.

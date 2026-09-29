@@ -2,7 +2,9 @@
 
 [한국어](README.ko.md)
 
-Meter is a macOS menu bar app and CLI that keeps usage and quota information for Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, and OpenCode Go in one place.
+Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and quotas across Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, and OpenCode Go. It queries providers with your existing sign-ins or keys and keeps usage observations on your Mac. There is no Meter account or hosted Meter service.
+
+[Install](#install) · [CLI](#cli) · [Contribute](CONTRIBUTING.md) · [MIT License](LICENSE)
 
 ## Features
 
@@ -31,7 +33,6 @@ Meter is a macOS menu bar app and CLI that keeps usage and quota information for
 - A DeepSeek API key, pasted into Meter or left in `DEEPSEEK_API_KEY`, for DeepSeek balance
 - A Command Code CLI login, or `COMMAND_CODE_API_KEY`, for Command Code usage
 - OpenCode Go connected in OpenCode, or a key given with `meter set-key opencode-go`, for OpenCode Go usage
-- A code signing certificate, so keychain permission survives rebuilds — see [Signing](#signing)
 
 Every provider except Cursor is enabled by default. Cursor needs its desktop app installed, so it is the one you opt into, from the Meter menu or with `meter enable cursor`.
 
@@ -39,7 +40,7 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 ## Install
 
-Download `Meter-0.4.25-macos-universal-app.zip` from the [v0.4.25 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.25), extract it, and move `Meter.app` to `/Applications`.
+Download `Meter-0.5.0-macos-universal-app.zip` from the [v0.5.0 release](https://github.com/justn-hyeok/meter/releases/tag/v0.5.0), extract it, and move `Meter.app` to `/Applications`. The archive includes the [MIT License](LICENSE) notice.
 
 **Required after downloading:** the release is not notarized, so macOS refuses to launch it until you clear the quarantine flag the browser attached. Run this once after moving the app:
 
@@ -47,9 +48,7 @@ Download `Meter-0.4.25-macos-universal-app.zip` from the [v0.4.25 release](https
 xattr -dr com.apple.quarantine /Applications/Meter.app
 ```
 
-The old Control-click → **Open** shortcut no longer works since macOS 15 (Sequoia). The only other way is to try to open it once, then choose **Open Anyway** in System Settings → Privacy & Security.
-
-> Want this step gone? Notarization needs a $99/year Apple Developer membership. Send me $99 and it disappears.
+Alternatively, try opening the app once and choose **Open Anyway** in System Settings → Privacy & Security.
 
 Building it yourself also skips this, and keeps macOS from re-asking for keychain permission - see [Signing](#signing).
 
@@ -70,10 +69,7 @@ No additional Meter login is required. Meter does not log credentials or raw aut
 1. Sign in with `claude` (Claude Code) if you have not already.
 2. Choose **Always Allow** the first time macOS asks for keychain permission.
 
-Claude Code keeps the subscription OAuth token in the login keychain and refreshes it,
-so Meter reads that item and calls the account usage endpoint. Windows are read from the
-response's self-describing `limits` array rather than the codenamed keys beside it,
-which come and go as plans change.
+Claude Code keeps the subscription OAuth token in the login keychain and refreshes it, so Meter reads that item and calls the account usage endpoint. Windows are read from the response's self-describing `limits` array rather than the codenamed keys beside it, which come and go as plans change.
 
 ### Cursor
 
@@ -128,11 +124,12 @@ Codex, Claude, and Cursor have one account each: whichever one their app or CLI 
 
 - Credentials, cookies, and tokens are never written to logs.
 - Credentials are read from the local keychain, from files the vendors' own CLIs write, and from keys you give Meter, and are sent only to the service that issued them.
-- Every provider is reached through the API its own first-party client uses.
+- Meter talks directly to endpoints used by each provider's client. Some are undocumented and may need maintenance when the provider changes them.
 - JWTs are read for their `sub` claim only. Meter never verifies, mints, or forwards a token elsewhere.
-- Cursor, Command Code, and OpenCode Go use private dashboard endpoints and may require maintenance if those dashboards change.
 - A failed refresh keeps the last successful snapshot and marks it stale instead of erasing it.
 - Every provider request times out after 15 seconds.
+
+Report suspected vulnerabilities through the [private security channel](SECURITY.md), not a public issue.
 
 ## Troubleshooting
 
@@ -158,14 +155,11 @@ swift run MeterApp
 
 ### Signing
 
-Meter reads credentials that other applications own, and macOS records that permission against the app's designated requirement:
+Meter reads credentials owned by other applications. macOS ties keychain permission to the app's signing identity, so rebuilding with an ad-hoc signature may prompt for permission again. `Scripts/sign.sh` prefers a Developer ID certificate, then an Apple Development certificate, and falls back to ad-hoc signing when neither is available. Set `METER_SIGN_IDENTITY` to select a certificate. The current release is not notarized.
 
-```
-ad-hoc      => cdhash H"97720ab1..."                 changes on every rebuild
-certificate => identifier "com.justn.meter" and ...  stable
-```
+## Contributing
 
-An ad-hoc signature therefore revokes Meter's own keychain access every time it is rebuilt. `Scripts/sign.sh` prefers a Developer ID certificate and falls back to an Apple Development certificate, which a free Apple ID provides. Set `METER_SIGN_IDENTITY` to choose one explicitly. Notarization is only needed to give the app to another Mac.
+Bug fixes and provider compatibility improvements are welcome. Open an [issue](https://github.com/justn-hyeok/meter/issues) with a reproduction and environment details, or send a focused pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for build and test steps and how to report problems without exposing sensitive data.
 
 ## CLI
 
@@ -221,9 +215,9 @@ See the [tmux manual](https://man.openbsd.org/tmux), [Starship custom modules](h
 
 `meter set-key <provider>` stores an API key for the providers whose credential Meter cannot find on the machine, reading it from stdin; `meter clear-key <provider>` removes it. `meter doctor` reports where each credential comes from and whether it is present. It makes no network request and never shows a keychain prompt, so it stays usable when a provider is broken. With `--strict` it exits 1 when an enabled provider has no credential.
 
-The default exit status is 0 when at least one provider has a usable observation. Use `--strict` to exit 1 for stale observations or unavailable providers. The command exits 2 when none has data and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`. Schema 3 changes no fields; it marks that `snapshots` and doctor's `credentials` follow the order arranged in the menu (or, for named providers, the order typed). That ordering already appeared under schema 2 in 0.4.16–0.4.19 (0.4.19 only for doctor), so read entries by `provider` rather than by position. Schema 4 (0.4.24) marks named accounts: a provider can appear once per account, and a named account's entry carries an `account` field with its name. The default account's entries have no `account` field. 0.4.24 already produced these under schema 3.
+The default exit status is 0 when at least one provider has a usable observation. Use `--strict` to exit 1 for stale observations or unavailable providers. The command exits 2 when none has data and 64 for invalid arguments. JSON output wraps `snapshots` in `schemaVersion: 4` and follows menu order or the order of arguments supplied. Named accounts have an `account` field; default accounts do not. Automation should identify entries by `provider` and `account`, not array position.
 
-The v0.4.25 release also includes `meter-0.4.25-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
+The v0.5.0 release also includes `meter-0.5.0-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh
@@ -235,7 +229,7 @@ Set `PREFIX` to install elsewhere:
 PREFIX=/usr/local ./Scripts/install-cli.sh
 ```
 
-Build a universal Apple Silicon and Intel app bundle with an ad-hoc signature:
+Build a universal Apple Silicon and Intel app bundle. It uses an available signing certificate, falling back to an ad-hoc signature:
 
 ```sh
 ./Scripts/package-app.sh

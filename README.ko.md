@@ -2,7 +2,9 @@
 
 [English](README.md)
 
-Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 사용량과 한도를 한곳에서 확인하는 macOS 메뉴바 앱 및 CLI입니다.
+Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 사용량과 한도를 한곳에서 확인하는 **MIT 라이선스 macOS 메뉴바 앱 및 CLI**입니다. 기존 로그인이나 사용자가 준 키로 제공자에게 직접 조회하고, 사용량 관측값은 이 Mac에 저장합니다. Meter 전용 계정이나 서버는 없습니다.
+
+[설치](#설치) · [CLI](#cli) · [기여](CONTRIBUTING.md) · [MIT 라이선스](LICENSE)
 
 ## 주요 기능
 
@@ -31,7 +33,6 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 
 - DeepSeek 잔액 조회를 위한 DeepSeek API 키 (Meter에 붙여넣거나 `DEEPSEEK_API_KEY`에 설정)
 - Command Code 사용량 조회를 위한 Command Code CLI 로그인 또는 `COMMAND_CODE_API_KEY`
 - OpenCode Go 사용량 조회를 위한 OpenCode의 OpenCode Go 연결 또는 `meter set-key opencode-go`로 저장한 키
-- 키체인 허용이 리빌드 후에도 유지되도록 하는 코드 서명 인증서 — [서명](#서명) 참고
 
 Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor는 데스크톱 앱 설치가 필요하므로 Meter 메뉴나 `meter enable cursor`로 직접 켭니다.
 
@@ -39,7 +40,7 @@ Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor
 
 ## 설치
 
-[v0.4.25 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.25)에서 `Meter-0.4.25-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
+[v0.5.0 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.5.0)에서 `Meter-0.5.0-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다. 압축 파일에는 [MIT 라이선스](LICENSE) 고지가 포함됩니다.
 
 **설치 후 필수:** 릴리즈는 공증되지 않아서, 브라우저가 붙인 격리 속성을 지우기 전까지 macOS가 실행을 막습니다. 앱을 옮긴 뒤 한 번만 실행하세요.
 
@@ -47,9 +48,7 @@ Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor
 xattr -dr com.apple.quarantine /Applications/Meter.app
 ```
 
-macOS 15(Sequoia)부터는 예전의 Control-클릭 → **열기** 방법이 통하지 않습니다. 명령어 말고는 한 번 실행을 시도한 뒤 시스템 설정 → 개인정보 보호 및 보안에서 **그래도 열기**를 누르는 방법뿐입니다.
-
-> 이 단계 없애고 싶으면 저한테 $99 입금하세요. 공증에 필요한 Apple Developer 연회비가 딱 그만큼입니다.
+터미널 명령 대신 앱 실행을 한 번 시도한 뒤 시스템 설정 → 개인정보 보호 및 보안에서 **그래도 열기**를 선택할 수도 있습니다.
 
 직접 빌드하면 이 과정이 필요 없고, 키체인 허용도 리빌드 후에 유지됩니다 — [서명](#서명) 참고.
 
@@ -70,9 +69,7 @@ Meter에서 별도로 로그인할 필요는 없습니다. 자격 증명이나 �
 1. 아직 로그인하지 않았다면 `claude`(Claude Code)로 로그인합니다.
 2. macOS가 처음 키체인 허용을 물으면 **항상 허용**을 선택합니다.
 
-Claude Code는 구독 OAuth 토큰을 로그인 키체인에 보관하며 갱신합니다. Meter는 그 항목을 읽어 계정 사용량
-엔드포인트를 호출합니다. 윈도우는 응답의 자기설명적인 `limits` 배열에서 읽습니다. 그 옆에 있는 코드네임 키들은
-플랜이 바뀌면 생기고 사라지기 때문입니다.
+Claude Code는 구독 OAuth 토큰을 로그인 키체인에 보관하며 갱신합니다. Meter는 그 항목을 읽어 계정 사용량 엔드포인트를 호출합니다. 윈도우는 응답의 자기설명적인 `limits` 배열에서 읽습니다. 그 옆에 있는 코드네임 키들은 플랜이 바뀌면 생기고 사라지기 때문입니다.
 
 ### Cursor
 
@@ -104,7 +101,6 @@ cmd login
 
 Meter는 그 CLI가 쓰는 것과 동일한 `alpha/billing/credits`·`alpha/usage/summary` 경로를 동일한 API 키로 호출합니다. 키는 `COMMAND_CODE_API_KEY`, `meter set-key command-code`로 저장한 키, `~/.commandcode/auth.json` 순으로 찾습니다. 브라우저는 관여하지 않으며 실행 중이어야 하는 것도 없습니다.
 
-
 ### OpenCode Go
 
 OpenCode에서 OpenCode Go를 한 번 연결합니다(`/connect` → OpenCode Go). OpenCode는 키를 `~/.local/share/opencode/auth.json`에 저장하며, Meter는 이 파일에서 `opencode-go` 항목만 읽습니다. 키는 `OPENCODE_GO_API_KEY`, `meter set-key opencode-go`로 저장한 키, OpenCode의 파일 순으로 찾습니다.
@@ -128,11 +124,12 @@ Codex, Claude, Cursor는 이 Mac에서 앱이나 CLI로 로그인한 계정 하�
 
 - 자격 증명, 쿠키, 토큰을 로그에 남기지 않습니다.
 - 자격 증명은 로컬 키체인, 각 서비스 공식 CLI가 기록한 파일, 사용자가 Meter에 준 키에서 읽으며, 발급한 서비스에만 전송됩니다.
-- 모든 제공자는 해당 서비스의 공식 클라이언트가 쓰는 API로 접근합니다.
+- Meter는 각 제공자의 클라이언트가 사용하는 엔드포인트에 직접 접근합니다. 일부 경로는 공개 API가 아니므로 제공자가 변경하면 유지보수가 필요합니다.
 - JWT는 `sub` 클레임만 읽습니다. Meter는 토큰을 검증하거나 생성하거나 다른 곳으로 보내지 않습니다.
-- Cursor, Command Code, OpenCode Go는 비공개 대시보드 엔드포인트를 사용하므로 대시보드가 변경되면 유지보수가 필요할 수 있습니다.
 - 갱신에 실패해도 마지막 정상 스냅샷을 지우지 않고 오래된 데이터로 표시합니다.
 - 모든 제공자 요청은 15초 후 타임아웃됩니다.
+
+보안 취약점은 공개 이슈 대신 [비공개 제보 안내](SECURITY.md)를 사용해 주세요.
 
 ## 문제 해결
 
@@ -158,14 +155,11 @@ swift run MeterApp
 
 ### 서명
 
-Meter는 다른 앱이 소유한 자격 증명을 읽고, macOS는 그 허용을 앱의 **지정 요구사항(DR)** 기준으로 기록합니다.
+Meter는 다른 앱이 소유한 자격 증명을 읽습니다. macOS는 키체인 허용을 앱의 서명 신원에 연결하므로, ad-hoc 서명 빌드를 다시 만들면 허용을 다시 물을 수 있습니다. `Scripts/sign.sh`는 Developer ID 인증서를 우선 사용하고, 없으면 Apple Development 인증서를 사용합니다. 인증서가 없다면 ad-hoc 서명으로 대체합니다. `METER_SIGN_IDENTITY`로 서명 인증서를 지정할 수 있습니다. 현재 릴리즈는 공증되지 않았습니다.
 
-```
-ad-hoc  => cdhash H"97720ab1..."                 리빌드마다 변경
-인증서  => identifier "com.justn.meter" and ...  고정
-```
+## 기여
 
-즉 ad-hoc 서명은 리빌드할 때마다 스스로의 키체인 접근 권한을 무효화합니다. `Scripts/sign.sh`는 Developer ID 인증서를 우선 사용하고, 없으면 무료 Apple ID로 발급되는 Apple Development 인증서를 사용합니다. `METER_SIGN_IDENTITY`로 직접 지정할 수 있습니다. 공증은 다른 맥에 배포할 때만 필요합니다.
+버그 수정과 제공자 호환성 개선을 환영합니다. 재현 방법과 환경을 적어 [이슈](https://github.com/justn-hyeok/meter/issues)를 열거나, 범위를 좁힌 PR을 보내 주세요. 빌드·테스트 방법과 민감한 자료를 제외한 제보 방법은 [기여 안내](CONTRIBUTING.md)에 있습니다.
 
 ## CLI
 
@@ -221,9 +215,9 @@ format = "[$output]($style)"
 
 `meter set-key <provider>`는 Meter가 이 맥에서 찾을 수 없는 제공자의 API 키를 stdin에서 읽어 저장하고, `meter clear-key <provider>`는 지웁니다. `meter doctor`는 각 자격 증명의 출처와 존재 여부를 보고합니다. 네트워크 요청을 하지 않고 키체인 프롬프트도 띄우지 않으므로 제공자가 고장난 상태에서도 사용할 수 있습니다. `--strict`와 함께 쓰면 활성화된 제공자에 자격 증명이 없을 때 1을 반환합니다.
 
-기본 모드에서는 하나 이상의 제공자에 사용 가능한 관측값이 있으면 종료 코드 0을 반환합니다. 오래된 값이나 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자의 데이터가 없으면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다. 스키마 3은 필드를 바꾸지 않았고, `snapshots`와 doctor의 `credentials`가 메뉴에서 정한 순서(제공자를 직접 적으면 적은 순서)를 따른다는 표시입니다. 이 순서는 0.4.16~0.4.19에서 이미 스키마 2로 나갔으므로(doctor는 0.4.19만), 항목은 위치가 아니라 `provider`로 읽으세요. 스키마 4(0.4.24)는 이름 붙인 계정을 표시합니다. 한 제공자가 계정 수만큼 여러 번 나올 수 있고, 이름 붙인 계정의 항목에는 계정 이름을 담은 `account` 필드가 붙습니다. 기본 계정의 항목에는 `account` 필드가 없습니다. 0.4.24은 이미 이 형태를 스키마 3으로 내보냈습니다.
+기본 모드에서는 하나 이상의 제공자에 사용 가능한 관측값이 있으면 종료 코드 0을 반환합니다. 오래된 값이나 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자의 데이터가 없으면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 `schemaVersion: 4` 봉투에 `snapshots`를 담고, 메뉴에서 정한 순서 또는 인자로 적은 순서를 따릅니다. 이름 붙인 계정에는 `account` 필드가 붙고 기본 계정에는 붙지 않습니다. 자동화에서는 배열 위치 대신 `provider`와 `account`로 항목을 식별하세요.
 
-v0.4.25 릴리즈에는 `meter-0.4.25-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
+v0.5.0 릴리즈에는 `meter-0.5.0-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 
 ```sh
 ./Scripts/install-cli.sh
@@ -235,7 +229,7 @@ v0.4.25 릴리즈에는 `meter-0.4.25-macos-universal-cli.zip`도 포함됩니�
 PREFIX=/usr/local ./Scripts/install-cli.sh
 ```
 
-Apple Silicon과 Intel을 모두 지원하는 ad-hoc 서명 앱 번들을 빌드합니다.
+Apple Silicon과 Intel을 모두 지원하는 앱 번들을 빌드합니다. 사용 가능한 인증서로 서명하고, 없으면 ad-hoc 서명으로 대체합니다.
 
 ```sh
 ./Scripts/package-app.sh
