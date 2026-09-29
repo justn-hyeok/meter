@@ -36,7 +36,13 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 Download `Meter-0.4.13-macos-universal-app.zip` from the [v0.4.13 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.13), extract it, and move `Meter.app` to `/Applications`.
 
-The release is signed with a development certificate but is not notarized, so another Mac will still block the first launch: Control-click `Meter.app` in Finder, choose **Open**, and confirm once. Building it yourself avoids that, and is what keeps macOS from re-asking for keychain permission - see [Signing](#signing).
+The release is signed with a development certificate but is not notarized, so macOS blocks the first launch. The old Control-click → **Open** shortcut no longer works since macOS 15 (Sequoia). Clear the quarantine flag the browser attached to the download instead:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Meter.app
+```
+
+Alternatively, try to open it once, then choose **Open Anyway** in System Settings → Privacy & Security. Building it yourself avoids both, and keeps macOS from re-asking for keychain permission - see [Signing](#signing).
 
 SHA-256 checksums for the app and CLI archives are included in the release notes.
 
@@ -153,7 +159,7 @@ With no provider argument, `meter` queries the providers enabled in the shared s
 
 The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`.
 
-The v0.4.13 release also includes `meter-0.4.13-macos-universal-cli.zip`. Extract it and move `meter` to a directory on your `PATH`, or build and install it into `~/.local/bin` from this checkout:
+The v0.4.13 release also includes `meter-0.4.13-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh
