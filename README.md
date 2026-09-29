@@ -256,4 +256,4 @@ Optional executable overrides:
 
 ## License
 
-The repository is public, but no software reuse license has been selected yet.
+Licensed under the [MIT License](LICENSE).
