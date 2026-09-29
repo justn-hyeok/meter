@@ -16,8 +16,6 @@ struct MeterApp: App {
             // the battery's own, which reads as no Meter at all.
             Label("Meter", systemImage: icon)
                 .task {
-                    store.onAlerts = { Notifier.post($0) }
-                    Notifier.requestAuthorization()
                     store.start()
                 }
         }
@@ -77,7 +75,6 @@ private struct MeterMenu: View {
 
 private struct SettingsRows: View {
     @Bindable var store: UsageStore
-    @State private var notifier = Notifier.shared
     @State private var loginItemFailure: String?
 
     var body: some View {
@@ -95,22 +92,6 @@ private struct SettingsRows: View {
                     }
                 ))
             }
-            Toggle("Notify at 80% and 95%", isOn: Binding(
-                get: { store.alertsEnabled },
-                set: { store.setAlertsEnabled($0) }
-            ))
-            // Saying the toggle is on while macOS discards every notification would be a
-            // lie of exactly the kind this app keeps finding in itself.
-            if store.alertsEnabled, notifier.permission.blocksDelivery {
-                HStack(spacing: 4) {
-                    Text(notifier.permission == .denied
-                         ? "macOS is blocking Meter's notifications."
-                         : "macOS has not been asked yet.")
-                    Button("Open Settings") { notifier.openSystemSettings() }
-                        .buttonStyle(.link)
-                }
-                .foregroundStyle(.secondary)
-            }
             if let loginItemFailure {
                 Text(loginItemFailure).foregroundStyle(.red)
             }
@@ -125,7 +106,6 @@ private struct SettingsRows: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .task { notifier.refreshPermission() }
     }
 }
 

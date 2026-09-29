@@ -26,18 +26,12 @@ public final class UsageStore {
     /// When usable data last arrived, not when a refresh was last attempted.
     public private(set) var lastRefresh: Date?
     public private(set) var enabledProviders: Set<ProviderID>
-    /// Stored rather than read through to settings so the menu toggle observes changes.
-    public private(set) var alertsEnabled: Bool
     /// Cached so the menu does not read the key file from inside a SwiftUI body.
     public private(set) var storedKeyProviders: Set<ProviderID>
     /// Cached so the menu does not probe the machine from inside a SwiftUI body.
     public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
     public var refreshInterval: TimeInterval = 300
 
-    /// Set by the app to post notifications; MeterCore stays free of UserNotifications.
-    public var onAlerts: (@MainActor ([UsageAlert]) -> Void)?
-
-    private var alertTracker = UsageAlertTracker()
     /// Identifies the most recently started fetch per provider, so a slow batch cannot
     /// land on top of a newer single refresh that has already answered.
     private var latestFetch: [ProviderID: Int] = [:]
@@ -71,7 +65,6 @@ public final class UsageStore {
         self.refreshOnEnable = refreshOnEnable
         settings.migrateIfNeeded()
         self.enabledProviders = Set(settings.enabledProviders())
-        self.alertsEnabled = settings.alertsEnabled
         self.storedKeyProviders = Self.providersWithStoredKeys(secrets)
         self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
     }
@@ -122,14 +115,6 @@ public final class UsageStore {
         // A refresh that produced nothing usable must not advertise itself as the last
         // update; the menu would otherwise show a fresh time above stale figures.
         if results.contains(where: { $0.state == .live }) { lastRefresh = .now }
-
-        announceAlerts()
-    }
-
-    public func setAlertsEnabled(_ enabled: Bool) {
-        guard enabled != alertsEnabled else { return }
-        alertsEnabled = enabled
-        settings.alertsEnabled = enabled
     }
 
     // MARK: - Provider keys
@@ -177,7 +162,6 @@ public final class UsageStore {
             await service.fetch(provider)
         }
         merge(snapshot, token: token)
-        announceAlerts()
     }
 
     /// Called when the menu opens. Retries anything the background refresh could not read
@@ -194,15 +178,6 @@ public final class UsageStore {
         fetchCounter += 1
         latestFetch[provider] = fetchCounter
         return fetchCounter
-    }
-
-    /// The tracker is consulted only when alerts are on. Asking it while they are off
-    /// would record the crossing as already announced, and turning them back on would
-    /// then stay silent until the window rolled.
-    private func announceAlerts() {
-        guard alertsEnabled else { return }
-        let alerts = alertTracker.alerts(for: ProviderID.allCases.compactMap { snapshots[$0] })
-        if !alerts.isEmpty { onAlerts?(alerts) }
     }
 
     /// Every enabled provider answered and none produced data. `highestUsage` is nil for
@@ -226,9 +201,8 @@ public final class UsageStore {
         return tightest?.key
     }
 
-    /// The same line the first notification threshold draws, so the menu and the
-    /// notifications agree about what counts as worth noticing.
-    static let urgentFraction = Double(UsageAlertTracker.defaultThresholds[0]) / 100
+    /// Where a window starts to deserve attention.
+    static let urgentFraction = 0.8
 
     public var isAllUnavailable: Bool {
         !enabledProviders.isEmpty && enabledProviders.allSatisfy { snapshots[$0]?.buckets.isEmpty ?? false }

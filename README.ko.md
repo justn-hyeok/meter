@@ -12,7 +12,6 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT의 사용량과 
 - DeepSeek API 잔액 표시
 - Command Code GOAT 월간 크레딧과 롤링 한도 표시
 - 앱을 다시 실행해도 유지되는 제공자별 토글
-- 사용률이 80%·95%를 넘을 때 알림 (선택)
 - 로그인 시 자동 실행
 - 5분마다 자동 갱신 및 메뉴에서 수동 갱신
 - 일시적인 갱신 실패 시 마지막 정상 데이터 보존
@@ -35,7 +34,7 @@ Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor
 
 ## 설치
 
-[v0.4.12 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.12)에서 `Meter-0.4.12-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
+[v0.4.13 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.13)에서 `Meter-0.4.13-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
 
 릴리즈는 개발용 인증서로 서명되어 있으나 공증되지 않았으므로, 다른 맥에서는 첫 실행이 차단됩니다. Finder에서 `Meter.app`을 Control-클릭하고 **열기**를 선택한 뒤 한 번 승인하세요. 직접 빌드하면 이 과정이 없고, 키체인 허용이 리빌드 후에도 유지됩니다 — [서명](#서명) 참고.
 
@@ -153,7 +152,7 @@ swift run meter disable deepseek
 
 기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다.
 
-v0.4.12 릴리즈에는 `meter-0.4.12-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기거나, 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
+v0.4.13 릴리즈에는 `meter-0.4.13-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기거나, 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 
 ```sh
 ./Scripts/install-cli.sh

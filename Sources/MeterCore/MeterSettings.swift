@@ -21,13 +21,6 @@ public struct MeterSettings {
         ProviderID.allCases.filter(enabled)
     }
 
-    private static let alertsKey = "alerts.enabled"
-
-    public var alertsEnabled: Bool {
-        get { defaults.object(forKey: Self.alertsKey) as? Bool ?? true }
-        nonmutating set { defaults.set(newValue, forKey: Self.alertsKey) }
-    }
-
     public func setEnabled(_ enabled: Bool, for provider: ProviderID) {
         defaults.set(enabled, forKey: key(for: provider))
     }
