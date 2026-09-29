@@ -462,3 +462,26 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
     #expect(raw?.count == 2)
 }
+
+@MainActor
+@Test func anAbandonedDragLeavesTheSavedOrderAlone() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    let before = store.providerOrder
+
+    // Passing over cards moves them on screen without writing anything.
+    store.move(.codex, to: .deepSeek, persist: false)
+    #expect(store.providerOrder == [.claude, .cursor, .deepSeek, .codex, .commandCode])
+    #expect(settings.providerOrder == before)
+
+    // Esc: the old order comes back.
+    store.restoreOrder(before)
+    #expect(store.providerOrder == before)
+
+    // A drop saves what is on screen.
+    store.move(.cursor, to: .codex, persist: false)
+    store.saveOrder()
+    #expect(settings.providerOrder == store.providerOrder)
+    #expect(settings.providerOrder != before)
+}

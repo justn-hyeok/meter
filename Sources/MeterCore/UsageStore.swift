@@ -122,7 +122,11 @@ public final class UsageStore {
 
     /// Moves `provider` into `target`'s place: after it when moving down the list, before it
     /// when moving up - which is where a dragged card lands when it passes over another.
-    public func move(_ provider: ProviderID, to target: ProviderID) {
+    ///
+    /// A drag passes `persist: false` and saves only on the drop, so a drag abandoned with
+    /// Esc or released outside the menu can put the old order back without having written
+    /// every card it passed over along the way.
+    public func move(_ provider: ProviderID, to target: ProviderID, persist: Bool = true) {
         guard provider != target,
               let from = providerOrder.firstIndex(of: provider),
               let to = providerOrder.firstIndex(of: target) else { return }
@@ -130,7 +134,18 @@ public final class UsageStore {
         order.remove(at: from)
         order.insert(provider, at: to)
         providerOrder = order
-        settings.providerOrder = order
+        if persist { settings.providerOrder = order }
+    }
+
+    /// Saves the order on screen, ending a drag that moved cards with `persist: false`.
+    public func saveOrder() {
+        settings.providerOrder = providerOrder
+    }
+
+    /// Puts back an order taken before a drag that was then abandoned.
+    public func restoreOrder(_ order: [ProviderID]) {
+        guard Set(order) == Set(providerOrder) else { return }
+        providerOrder = order
     }
 
     // MARK: - Provider keys
