@@ -10,6 +10,7 @@ import Testing
             == .init(command: .status(.named([.codex, .commandCode])), json: true, strict: true)
     )
     #expect(try CLIArgumentParser.parse(["status", "all"]).command == .status(.all))
+    #expect(try CLIArgumentParser.parse(["ALL"]).command == .status(.all))
     // Every name typed out is a named list, not `all`: it prints in the order typed.
     let typed = ProviderID.allCases.map(\.rawValue)
     #expect(try CLIArgumentParser.parse(typed).command == .status(.named(ProviderID.allCases)))
@@ -177,7 +178,7 @@ private struct StubProvider: UsageProvider {
               fetchedAt: .now, source: "test", state: .live, message: nil)
     }
     #expect(CLITextFormatter.tightestWindow(in: [snapshot(79)]) == nil)
-    #expect(CLITextFormatter.tightestWindow(in: [snapshot(81)]) == "claude/w")
+    #expect(CLITextFormatter.tightestWindow(in: [snapshot(81)]) == BucketKey(provider: .claude, bucketID: "w"))
     let coloured = CLITextFormatter.status([snapshot(91)], style: .color(trueColor: true))
     #expect(coloured.contains("\u{1B}[1mWeekly"))
 }
@@ -190,7 +191,7 @@ private struct StubProvider: UsageProvider {
     }
     // The menu and the CLI share this rule, and both list providers in the arranged order.
     #expect(TightestLimit.find(in: [snapshot(.cursor), snapshot(.codex)]) == BucketKey(provider: .cursor, bucketID: "w"))
-    #expect(CLITextFormatter.tightestWindow(in: [snapshot(.claude), snapshot(.codex)]) == "claude/w")
+    #expect(CLITextFormatter.tightestWindow(in: [snapshot(.claude), snapshot(.codex)]) == BucketKey(provider: .claude, bucketID: "w"))
 }
 
 @Test func providersListFollowsTheArrangedOrder() throws {

@@ -133,6 +133,8 @@ public final class UsageStore {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
+        // Not the order: this also runs on the five-minute timer, which can land mid-drag.
+        reloadSettings(includingOrder: false)
 
         let selected = ProviderID.allCases.filter(enabled)
         let tokens = Dictionary(uniqueKeysWithValues: selected.map { ($0, beginFetch($0)) })
@@ -163,10 +165,26 @@ public final class UsageStore {
         if persist { settings.providerOrder = order }
     }
 
-    /// Takes up the saved order, which something other than this menu may have changed.
-    public func reloadOrder() {
-        let saved = settings.providerOrder
-        if saved != providerOrder { providerOrder = saved }
+    /// Takes up what the CLI or another copy of Meter changed while this one was running.
+    ///
+    /// All of it used to be read once at launch: after `meter disable codex` the menu kept
+    /// Codex checked and kept polling it, after `meter set-key` the key field stayed up,
+    /// and the next drag wrote the launch-time order back over an order saved elsewhere.
+    public func reloadSettings(includingOrder: Bool) {
+        let enabledNow = Set(settings.enabledProviders())
+        if enabledNow != enabledProviders {
+            // Keep the invariant: only enabled providers have snapshots.
+            for provider in enabledProviders.subtracting(enabledNow) { snapshots[provider] = nil }
+            enabledProviders = enabledNow
+        }
+        let keys = Self.providersWithStoredKeys(secrets)
+        if keys != storedKeyProviders { storedKeyProviders = keys }
+        let status = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
+        if status != credentialStatus { credentialStatus = status }
+        if includingOrder {
+            let saved = settings.providerOrder
+            if saved != providerOrder { providerOrder = saved }
+        }
     }
 
     /// Saves the order on screen, ending a drag that moved cards with `persist: false`.
@@ -176,7 +194,7 @@ public final class UsageStore {
 
     /// Puts back an order taken before a drag that was then abandoned.
     public func restoreOrder(_ order: [ProviderID]) {
-        guard Set(order) == Set(providerOrder) else { return }
+        guard order.count == providerOrder.count, Set(order) == Set(providerOrder) else { return }
         providerOrder = order
     }
 
@@ -230,10 +248,9 @@ public final class UsageStore {
     /// Called when the menu opens. Retries anything the background refresh could not read
     /// without a dialog, which is where the keychain prompt now appears.
     public func menuOpened() async {
-        // The order was read once at launch, so a change saved elsewhere since then - the
-        // defaults written by hand, another copy of Meter - would have been overwritten by
-        // the next drag. Opening the menu is when the order is about to be looked at.
-        reloadOrder()
+        // The order is reloaded only here, where no drag can be under way: a drag moves
+        // cards without saving, and reloading in the middle of one would undo its moves.
+        reloadSettings(includingOrder: true)
         let stale = ProviderID.allCases.filter { enabled($0) && snapshots[$0]?.state != .live }
         guard !stale.isEmpty else { return }
         for provider in stale {

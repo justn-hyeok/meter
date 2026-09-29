@@ -28,9 +28,9 @@ public struct MeterSettings {
     /// Unknown names are skipped and duplicates kept once, and a provider added in a later
     /// version joins at the end rather than vanishing because the saved list predates it.
     ///
-    /// Saving keeps the names this build does not know, after the ones it does. Writing only
-    /// the known ones meant that running an older build after a newer one, then dragging a
-    /// card, deleted the newer build's providers from the saved order.
+    /// Saving keeps the names this build does not know, each after the name it followed.
+    /// Writing only the known ones meant that running an older build after a newer one, then
+    /// dragging a card, sent the newer build's providers to the bottom of its list.
     public var providerOrder: [ProviderID] {
         get {
             var seen = Set<ProviderID>()
@@ -42,9 +42,14 @@ public struct MeterSettings {
         nonmutating set {
             var names: [String] = []
             for name in newValue.map(\.rawValue) where !names.contains(name) { names.append(name) }
-            let unknown = (defaults.stringArray(forKey: Self.orderKey) ?? [])
-                .filter { ProviderID(rawValue: $0) == nil }
-            for name in unknown where !names.contains(name) { names.append(name) }
+            var previous: String?
+            for name in defaults.stringArray(forKey: Self.orderKey) ?? [] {
+                if ProviderID(rawValue: name) == nil, !names.contains(name) {
+                    let index = previous.flatMap { names.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+                    names.insert(name, at: index)
+                }
+                if names.contains(name) { previous = name }
+            }
             defaults.set(names, forKey: Self.orderKey)
         }
     }

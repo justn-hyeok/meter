@@ -16,7 +16,7 @@ enum CLITextFormatter {
                 lines.append("  " + style.wrap("unavailable  \(snapshot.message ?? "No usage data")", [.dim]))
             } else {
                 for bucket in snapshot.buckets {
-                    let isTightest = tightest == "\(snapshot.provider.rawValue)/\(bucket.id)"
+                    let isTightest = tightest == BucketKey(provider: snapshot.provider, bucketID: bucket.id)
                     let emphasis: [TerminalStyle.Attribute] = (isTightest ? [.bold] : []) + (stale ? [.dim] : [])
                     let row = [
                         style.wrap(fit(bucket.label, width: 20), emphasis),
@@ -32,8 +32,8 @@ enum CLITextFormatter {
     }
 
     /// The menu's rule, applied to the providers in the order they are printed.
-    static func tightestWindow(in snapshots: [UsageSnapshot]) -> String? {
-        TightestLimit.find(in: snapshots).map { "\($0.provider.rawValue)/\($0.bucketID)" }
+    static func tightestWindow(in snapshots: [UsageSnapshot]) -> BucketKey? {
+        TightestLimit.find(in: snapshots)
     }
 
     private static func fit(_ value: String, width: Int) -> String {
@@ -139,8 +139,8 @@ enum UsageBarRenderer {
 
 private struct CLIJSONEnvelope: Encodable {
     // 2: Cursor's spend bucket id changed from "on-demand" to "spend".
-    // 3: snapshots follow the order arranged in the menu, or the order typed, rather than
-    //    a fixed provider order.
+    // 3: no field changed. Marks that snapshots follow the order arranged in the menu, or
+    //    the order typed; that ordering first shipped in 0.4.16 while this still said 2.
     let schemaVersion = 3
     let generatedAt: Date
     let snapshots: [UsageSnapshot]
@@ -148,7 +148,8 @@ private struct CLIJSONEnvelope: Encodable {
 
 private struct CLIDoctorEnvelope: Encodable {
     // 2: availability gained "blocked".
-    // 3: credentials follow the order arranged in the menu rather than a fixed order.
+    // 3: no field changed. Marks that credentials follow the order arranged in the menu;
+    //    that ordering first shipped in 0.4.19 while this still said 2.
     let schemaVersion = 3
     let generatedAt: Date
     let credentials: [CredentialStatus]

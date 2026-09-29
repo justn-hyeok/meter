@@ -95,6 +95,7 @@ import Testing
     #expect(settings.providerOrder.prefix(2) == [.claude, .codex])
 
     settings.providerOrder = [.codex, .claude, .cursor, .deepSeek, .commandCode]
+    // It stays where the newer build put it: after Claude.
     #expect(defaults.stringArray(forKey: "providers.order")
-        == ["codex", "claude", "cursor", "deepseek", "command-code", "future-ai"])
+        == ["codex", "claude", "future-ai", "cursor", "deepseek", "command-code"])
 }

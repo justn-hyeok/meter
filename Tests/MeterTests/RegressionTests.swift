@@ -501,3 +501,35 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     store.move(.claude, to: .deepSeek)
     #expect(settings.providerOrder == [.claude, .deepSeek, .codex, .cursor, .commandCode])
 }
+
+@MainActor
+@Test func settingsChangedByTheCLIReachTheRunningMenu() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    store.replaceSnapshotForTesting(.unavailable(.codex, "test"))
+    #expect(store.enabled(.codex))
+
+    // `meter disable codex` while the app runs.
+    settings.setEnabled(false, for: .codex)
+    settings.providerOrder = [.claude, .codex, .cursor, .deepSeek, .commandCode]
+
+    // The background refresh takes up the switch but leaves the order alone.
+    store.reloadSettings(includingOrder: false)
+    #expect(!store.enabled(.codex))
+    #expect(store.snapshots[.codex] == nil)
+    #expect(store.providerOrder.first == .codex)
+
+    store.reloadSettings(includingOrder: true)
+    #expect(store.providerOrder.first == .claude)
+}
+
+@MainActor
+@Test func restoringAnOrderWithADuplicateIsRefused() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    let before = store.providerOrder
+    store.restoreOrder([.codex, .codex, .claude, .cursor, .deepSeek, .commandCode])
+    #expect(store.providerOrder == before)
+}

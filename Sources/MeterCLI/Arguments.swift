@@ -122,7 +122,8 @@ enum CLIArgumentParser {
     }
 
     private static func parseSelection(_ values: [String]) throws -> ProviderSelection {
-        if values == ["all"] { return .all }
+        // Case-insensitive like the provider names: `meter CODEX` worked and `meter ALL` did not.
+        if values.count == 1, values[0].lowercased() == "all" { return .all }
         guard let providers = try parseProviders(values) else { return .enabled }
         return .named(providers)
     }
