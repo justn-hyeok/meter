@@ -36,13 +36,17 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 Download `Meter-0.4.13-macos-universal-app.zip` from the [v0.4.13 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.13), extract it, and move `Meter.app` to `/Applications`.
 
-The release is signed with a development certificate but is not notarized, so macOS blocks the first launch. The old Control-click → **Open** shortcut no longer works since macOS 15 (Sequoia). Clear the quarantine flag the browser attached to the download instead:
+**Required after downloading:** the release is not notarized, so macOS refuses to launch it until you clear the quarantine flag the browser attached. Run this once after moving the app:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Meter.app
 ```
 
-Alternatively, try to open it once, then choose **Open Anyway** in System Settings → Privacy & Security. Building it yourself avoids both, and keeps macOS from re-asking for keychain permission - see [Signing](#signing).
+The old Control-click → **Open** shortcut no longer works since macOS 15 (Sequoia). The only other way is to try to open it once, then choose **Open Anyway** in System Settings → Privacy & Security.
+
+> Want this step gone? Notarization needs a $99/year Apple Developer membership. Send me $99 and it disappears.
+
+Building it yourself also skips this, and keeps macOS from re-asking for keychain permission - see [Signing](#signing).
 
 SHA-256 checksums for the app and CLI archives are included in the release notes.
 
