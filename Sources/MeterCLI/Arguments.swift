@@ -148,6 +148,7 @@ enum CLIArgumentParser {
         case "cursor": .cursor
         case "deepseek", "deep-seek": .deepSeek
         case "command-code", "commandcode", "goat": .commandCode
+        case "opencode-go", "opencodego", "opencode": .openCodeGo
         default: nil
         }
     }

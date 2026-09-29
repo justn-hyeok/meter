@@ -6,12 +6,15 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     case cursor
     case deepSeek = "deepseek"
     case commandCode = "command-code"
+    case openCodeGo = "opencode-go"
 
     public var id: String { rawValue }
 
     /// Whether Meter is handed this provider's credential rather than finding it on the
     /// machine. Those are the only ones `meter set-key` applies to.
-    public var acceptsStoredKey: Bool { self == .deepSeek || self == .commandCode || self == .claude }
+    public var acceptsStoredKey: Bool {
+        self == .deepSeek || self == .commandCode || self == .claude || self == .openCodeGo
+    }
 
     public var title: String {
         switch self {
@@ -20,6 +23,7 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         case .cursor: "Cursor"
         case .deepSeek: "DeepSeek API"
         case .commandCode: "Command Code GOAT"
+        case .openCodeGo: "OpenCode Go"
         }
     }
 }

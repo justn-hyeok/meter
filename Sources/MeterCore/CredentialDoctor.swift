@@ -35,19 +35,24 @@ public struct DiagnosticEnvironment: Sendable {
     public var keychain: @Sendable (String) -> Keychain.Presence
     public var fileExists: @Sendable (URL) -> Bool
     public var codexExecutable: @Sendable () -> URL?
+    /// Whether OpenCode's auth file holds an OpenCode Go key. Its existence alone says
+    /// nothing: the file lists every provider OpenCode is connected to.
+    public var openCodeGoKey: @Sendable () -> Bool
 
     init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         secrets: SecretStore = .default,
         keychain: @escaping @Sendable (String) -> Keychain.Presence = { Keychain.probe(service: $0) },
         fileExists: @escaping @Sendable (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) },
-        codexExecutable: @escaping @Sendable () -> URL? = DiagnosticEnvironment.liveCodexExecutable
+        codexExecutable: @escaping @Sendable () -> URL? = DiagnosticEnvironment.liveCodexExecutable,
+        openCodeGoKey: @escaping @Sendable () -> Bool = { OpenCodeGoCredential().cliKey() != nil }
     ) {
         self.environment = environment
         self.secrets = secrets
         self.keychain = keychain
         self.fileExists = fileExists
         self.codexExecutable = codexExecutable
+        self.openCodeGoKey = openCodeGoKey
     }
 
     static var codexAuthFile: URL { CodexUsageProvider.authFile }
@@ -83,6 +88,7 @@ public enum CredentialDoctor {
             cliFile: FileManager.default.homeDirectoryForCurrentUser.appending(path: ".commandcode/auth.json"),
             machine
         )
+        case .openCodeGo: openCodeGo(machine)
         }
     }
 
@@ -150,6 +156,19 @@ public enum CredentialDoctor {
             return .init(provider: provider, source: source, availability: .blocked,
                          detail: "keychain returned OSStatus \(status)")
         }
+    }
+
+    private static func openCodeGo(_ machine: DiagnosticEnvironment) -> CredentialStatus {
+        let source = "API key (env, stored, or OpenCode)"
+        if machine.openCodeGoKey() && !machine.secrets.hasSecret(for: .openCodeGo) {
+            return .init(provider: .openCodeGo, source: source, availability: .ready,
+                         detail: "from OpenCode's auth.json (connected with /connect)")
+        }
+        let status = apiKeyBacked(.openCodeGo, OpenCodeGoCredential.environmentKey, stored: true, cliFile: nil, machine)
+        return .init(provider: .openCodeGo, source: source, availability: status.availability,
+                     detail: status.availability == .missing
+                        ? "connect OpenCode Go in OpenCode (/connect), or run 'meter set-key opencode-go'"
+                        : status.detail)
     }
 
     private static func apiKeyBacked(

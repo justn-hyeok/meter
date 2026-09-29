@@ -410,19 +410,19 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     let (settings, cleanup) = try isolatedSettingsForRegression()
     defer { cleanup() }
     let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
-    #expect(store.providerOrder == [.codex, .claude, .cursor, .deepSeek, .commandCode])
+    #expect(store.providerOrder == [.codex, .claude, .cursor, .deepSeek, .commandCode, .openCodeGo])
 
     // Down the list: lands after the card it passed.
     store.move(.codex, to: .cursor)
-    #expect(store.providerOrder == [.claude, .cursor, .codex, .deepSeek, .commandCode])
+    #expect(store.providerOrder == [.claude, .cursor, .codex, .deepSeek, .commandCode, .openCodeGo])
 
     // Up the list: lands before it.
     store.move(.commandCode, to: .claude)
-    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek])
+    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek, .openCodeGo])
 
     // Dropping on itself changes nothing.
     store.move(.cursor, to: .cursor)
-    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek])
+    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek, .openCodeGo])
 
     // Saved, so a restart comes back the same way.
     #expect(settings.providerOrder == store.providerOrder)
@@ -472,7 +472,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 
     // Passing over cards moves them on screen without writing anything.
     store.move(.codex, to: .deepSeek, persist: false)
-    #expect(store.providerOrder == [.claude, .cursor, .deepSeek, .codex, .commandCode])
+    #expect(store.providerOrder == [.claude, .cursor, .deepSeek, .codex, .commandCode, .openCodeGo])
     #expect(settings.providerOrder == before)
 
     // Esc: the old order comes back.
@@ -493,13 +493,13 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
 
     // Changed behind the running menu's back.
-    settings.providerOrder = [.deepSeek, .codex, .claude, .cursor, .commandCode]
+    settings.providerOrder = [.deepSeek, .codex, .claude, .cursor, .commandCode, .openCodeGo]
     await store.menuOpened()
-    #expect(store.providerOrder == [.deepSeek, .codex, .claude, .cursor, .commandCode])
+    #expect(store.providerOrder == [.deepSeek, .codex, .claude, .cursor, .commandCode, .openCodeGo])
 
     // So the next drag starts from it rather than writing the launch-time order back.
     store.move(.claude, to: .deepSeek)
-    #expect(settings.providerOrder == [.claude, .deepSeek, .codex, .cursor, .commandCode])
+    #expect(settings.providerOrder == [.claude, .deepSeek, .codex, .cursor, .commandCode, .openCodeGo])
 }
 
 @MainActor
@@ -512,7 +512,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 
     // `meter disable codex` while the app runs.
     settings.setEnabled(false, for: .codex)
-    settings.providerOrder = [.claude, .codex, .cursor, .deepSeek, .commandCode]
+    settings.providerOrder = [.claude, .codex, .cursor, .deepSeek, .commandCode, .openCodeGo]
 
     // The background refresh takes up the switch but leaves the order alone.
     store.reloadSettings(includingOrder: false)
@@ -532,4 +532,33 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     let before = store.providerOrder
     store.restoreOrder([.codex, .codex, .claude, .cursor, .deepSeek, .commandCode])
     #expect(store.providerOrder == before)
+}
+
+@Test func openCodeGoWindowsAreReadAsPercentages() throws {
+    // As returned by opencode.ai/zen/go/v1/usage on 2026-09-30.
+    let json = #"{"usage":{"rolling":{"status":"ok","percent":4,"resetsAt":"2026-09-29T19:37:31.699Z"},"weekly":{"status":"ok","percent":1,"resetsAt":"2026-10-05T00:00:00.000Z"},"monthly":{"status":"ok","percent":1,"resetsAt":"2026-10-20T13:23:10.000Z"}}}"#
+    let snapshot = try OpenCodeGoUsageParser.parse(Data(json.utf8))
+    #expect(snapshot.buckets.map(\.label) == ["5-hour", "Weekly", "Monthly"])
+    #expect(snapshot.buckets.map(\.used) == [4, 1, 1])
+    #expect(snapshot.buckets.allSatisfy { $0.limit == 100 && $0.unit == .percent && $0.resetAt != nil })
+    #expect(snapshot.buckets[0].remaining == 96)
+}
+
+@Test func openCodeGoKeyIsReadFromOpenCodesOwnEntryOnly() throws {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "MeterTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let auth = directory.appending(path: "auth.json")
+    let store = SecretStore(fileURL: directory.appending(path: "credentials.json"))
+
+    // OpenCode lists every provider it is connected to; only opencode-go is Go's key.
+    try Data(#"{"opencode":{"type":"api","key":"zen-key"},"openai":{"type":"oauth","access":"x"}}"#.utf8).write(to: auth)
+    #expect(OpenCodeGoCredential(store: store, environment: [:], cliAuthFile: auth).apiKey() == nil)
+
+    try Data(#"{"opencode":{"type":"api","key":"zen-key"},"opencode-go":{"type":"api","key":"go-key"}}"#.utf8).write(to: auth)
+    #expect(OpenCodeGoCredential(store: store, environment: [:], cliAuthFile: auth).apiKey() == "go-key")
+
+    // A key handed to Meter wins over OpenCode's.
+    try store.setSecret("stored-key", for: .openCodeGo)
+    #expect(OpenCodeGoCredential(store: store, environment: [:], cliAuthFile: auth).apiKey() == "stored-key")
 }

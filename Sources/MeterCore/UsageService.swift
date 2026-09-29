@@ -10,6 +10,7 @@ public struct UsageService: Sendable {
             .deepSeek: DeepSeekUsageProvider(),
             .cursor: CursorUsageProvider(),
             .commandCode: CommandCodeUsageProvider(),
+            .openCodeGo: OpenCodeGoUsageProvider(),
         ]
     }
 

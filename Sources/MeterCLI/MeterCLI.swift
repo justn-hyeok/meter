@@ -12,7 +12,7 @@ struct CLIResult {
 }
 
 struct MeterCLIApplication {
-    static let version = "0.4.21"
+    static let version = "0.4.22"
 
     let service: UsageService
     let settings: MeterSettings
@@ -167,7 +167,7 @@ struct MeterCLIApplication {
       meter clear-key <provider>
 
     Providers:
-      codex, claude, cursor, deepseek, command-code
+      codex, claude, cursor, deepseek, command-code, opencode-go
 
     Selection:
       With no provider, status queries the providers enabled in Meter settings.

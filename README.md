@@ -2,7 +2,7 @@
 
 [한국어](README.ko.md)
 
-Meter is a private macOS menu bar app and CLI that keeps usage and quota information for Codex, Claude, Cursor, DeepSeek API, and Command Code GOAT in one place.
+Meter is a private macOS menu bar app and CLI that keeps usage and quota information for Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, and OpenCode Go in one place.
 
 ## Features
 
@@ -11,6 +11,7 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 - Cursor plan usage and on-demand spending
 - DeepSeek API balance
 - Command Code GOAT monthly credits and rolling limits
+- OpenCode Go 5-hour, weekly, and monthly limits
 - Per-provider toggles that persist across launches
 - Launch at login
 - **⌃⌥M** opens and closes the menu from anywhere
@@ -28,6 +29,7 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 - The Cursor desktop app, signed in, for Cursor usage
 - A DeepSeek API key, pasted into Meter or left in `DEEPSEEK_API_KEY`, for DeepSeek balance
 - A Command Code CLI login, or `COMMAND_CODE_API_KEY`, for Command Code usage
+- OpenCode Go connected in OpenCode, or a key given with `meter set-key opencode-go`, for OpenCode Go usage
 - A code signing certificate, so keychain permission survives rebuilds — see [Signing](#signing)
 
 Every provider except Cursor is enabled by default. Cursor needs its desktop app installed, so it is the one you opt into, from the Meter menu or with `meter enable cursor`.
@@ -36,7 +38,7 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 ## Install
 
-Download `Meter-0.4.21-macos-universal-app.zip` from the [v0.4.21 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.21), extract it, and move `Meter.app` to `/Applications`.
+Download `Meter-0.4.22-macos-universal-app.zip` from the [v0.4.22 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.22), extract it, and move `Meter.app` to `/Applications`.
 
 **Required after downloading:** the release is not notarized, so macOS refuses to launch it until you clear the quarantine flag the browser attached. Run this once after moving the app:
 
@@ -102,13 +104,19 @@ cmd login
 
 Meter then calls the same `alpha/billing/credits` and `alpha/usage/summary` routes that CLI uses, with the same API key. It looks for the key in `COMMAND_CODE_API_KEY`, then in a key handed to Meter with `meter set-key command-code`, then in `~/.commandcode/auth.json`. No browser is involved, and nothing needs to be running.
 
+### OpenCode Go
+
+Connect OpenCode Go once in OpenCode (`/connect`, then OpenCode Go). OpenCode keeps the key in `~/.local/share/opencode/auth.json`, and Meter reads only the `opencode-go` entry from that file. It looks for the key in `OPENCODE_GO_API_KEY`, then in a key handed to Meter with `meter set-key opencode-go`, then in OpenCode's file.
+
+OpenCode has no documented usage API for Go. Meter calls `opencode.ai/zen/go/v1/usage`, the route the OpenCode console reads, with that key. It shows the 5-hour, weekly, and monthly windows as percentages.
+
 ## Privacy and reliability
 
 - Credentials, cookies, and tokens are never written to logs.
 - Credentials are read from the local keychain, from files the vendors' own CLIs write, and from keys you give Meter, and are sent only to the service that issued them.
 - Every provider is reached through the API its own first-party client uses.
 - JWTs are read for their `sub` claim only. Meter never verifies, mints, or forwards a token elsewhere.
-- Cursor and Command Code use private dashboard endpoints and may require maintenance if those dashboards change.
+- Cursor, Command Code, and OpenCode Go use private dashboard endpoints and may require maintenance if those dashboards change.
 - A failed refresh keeps the last successful snapshot and marks it stale instead of erasing it.
 - Every provider request times out after 15 seconds.
 
@@ -117,6 +125,7 @@ Meter then calls the same `alpha/billing/credits` and `alpha/usage/summary` rout
 - **Codex unavailable:** Sign in through the Codex app or CLI, then refresh Meter.
 - **Cursor unavailable:** Sign in to the Cursor app, then refresh Meter.
 - **Command Code unavailable:** Run `cmd login`, or give Meter a key with `meter set-key command-code`.
+- **OpenCode Go unavailable:** Connect OpenCode Go in OpenCode with `/connect`, or run `meter set-key opencode-go`.
 - **A keychain prompt on every launch:** the build is ad-hoc signed, so each rebuild is a new identity. See [Signing](#signing).
 - **DeepSeek unavailable:** Run `meter set-key deepseek`. `DEEPSEEK_API_KEY` works for the CLI but an app launched from Finder never sees it, which `meter doctor` reports as `blocked`.
 - **No Dock icon:** This is expected; use the gauge icon in the menu bar.
@@ -165,7 +174,7 @@ With no provider argument, `meter` queries the providers enabled in the shared s
 
 The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`. Schema 3 changes no fields; it marks that `snapshots` and doctor's `credentials` follow the order arranged in the menu (or, for named providers, the order typed). That ordering already appeared under schema 2 in 0.4.16–0.4.19 (0.4.19 only for doctor), so read entries by `provider` rather than by position.
 
-The v0.4.21 release also includes `meter-0.4.21-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
+The v0.4.22 release also includes `meter-0.4.22-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh

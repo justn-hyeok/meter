@@ -7,14 +7,16 @@ private func machine(
     secrets: SecretStore,
     keychain: @escaping @Sendable (String) -> Keychain.Presence = { _ in .missing },
     files: Set<String> = [],
-    codexExecutable: URL? = nil
+    codexExecutable: URL? = nil,
+    openCodeGoKey: Bool = false
 ) -> DiagnosticEnvironment {
     DiagnosticEnvironment(
         environment: environment,
         secrets: secrets,
         keychain: keychain,
         fileExists: { files.contains($0.lastPathComponent) },
-        codexExecutable: { codexExecutable }
+        codexExecutable: { codexExecutable },
+        openCodeGoKey: { openCodeGoKey }
     )
 }
 

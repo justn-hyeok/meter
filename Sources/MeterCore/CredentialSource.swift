@@ -113,6 +113,55 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
     }
 }
 
+/// OpenCode keeps the OpenCode Go key it was connected with in its own auth file, under
+/// `opencode-go`, and the usage route the OpenCode console reads accepts that key.
+public struct OpenCodeGoCredential: CredentialSource {
+    public static let environmentKey = "OPENCODE_GO_API_KEY"
+    public static let cliAuthFile = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: ".local/share/opencode/auth.json")
+
+    private let store: SecretStore
+    private let environment: [String: String]
+    private let cliAuthFile: URL
+
+    public init(
+        store: SecretStore = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        cliAuthFile: URL = OpenCodeGoCredential.cliAuthFile
+    ) {
+        self.store = store
+        self.environment = environment
+        self.cliAuthFile = cliAuthFile
+    }
+
+    public var sourceDescription: String { "OpenCode Go API key" }
+
+    /// An environment variable, then a key handed to Meter, then OpenCode's own login.
+    public func apiKey() -> String? {
+        if let key = environment[Self.environmentKey], !key.isEmpty { return key }
+        if let key = store.secret(for: .openCodeGo) { return key }
+        return cliKey()
+    }
+
+    /// The key OpenCode stored when OpenCode Go was connected with `/connect`. The file holds
+    /// every provider OpenCode is connected to, so only that one entry is read.
+    public func cliKey() -> String? {
+        guard let data = try? Data(contentsOf: cliAuthFile),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let entry = root["opencode-go"] as? [String: Any],
+              let key = entry["key"] as? String,
+              !key.isEmpty else {
+            return nil
+        }
+        return key
+    }
+
+    public func authHeaders() throws -> [String: String] {
+        guard let key = apiKey() else { throw CredentialError.signInRequired("opencode.ai") }
+        return ["Authorization": "Bearer \(key)"]
+    }
+}
+
 /// Command Code's own CLI authenticates with an API key, and the routes it uses accept
 /// that key, so Meter presents the same credential to the same API rather than borrowing
 /// a browser session meant for the dashboard.

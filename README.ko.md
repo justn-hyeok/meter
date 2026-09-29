@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT의 사용량과 한도를 한곳에서 확인하는 비공개 macOS 메뉴바 앱 및 CLI입니다.
+Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 사용량과 한도를 한곳에서 확인하는 비공개 macOS 메뉴바 앱 및 CLI입니다.
 
 ## 주요 기능
 
@@ -11,6 +11,7 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT의 사용량과 
 - Cursor 플랜 사용량과 온디맨드 지출 표시
 - DeepSeek API 잔액 표시
 - Command Code GOAT 월간 크레딧과 롤링 한도 표시
+- OpenCode Go 5시간·주간·월간 한도 표시
 - 앱을 다시 실행해도 유지되는 제공자별 토글
 - 로그인 시 자동 실행
 - **⌃⌥M**으로 어디서든 메뉴 열고 닫기
@@ -28,6 +29,7 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT의 사용량과 
 - Cursor 사용량 조회를 위한 Cursor 데스크톱 앱 로그인
 - DeepSeek 잔액 조회를 위한 DeepSeek API 키 (Meter에 붙여넣거나 `DEEPSEEK_API_KEY`에 설정)
 - Command Code 사용량 조회를 위한 Command Code CLI 로그인 또는 `COMMAND_CODE_API_KEY`
+- OpenCode Go 사용량 조회를 위한 OpenCode의 OpenCode Go 연결 또는 `meter set-key opencode-go`로 저장한 키
 - 키체인 허용이 리빌드 후에도 유지되도록 하는 코드 서명 인증서 — [서명](#서명) 참고
 
 Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor는 데스크톱 앱 설치가 필요하므로 Meter 메뉴나 `meter enable cursor`로 직접 켭니다.
@@ -36,7 +38,7 @@ Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor
 
 ## 설치
 
-[v0.4.21 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.21)에서 `Meter-0.4.21-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
+[v0.4.22 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.22)에서 `Meter-0.4.22-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
 
 **설치 후 필수:** 릴리즈는 공증되지 않아서, 브라우저가 붙인 격리 속성을 지우기 전까지 macOS가 실행을 막습니다. 앱을 옮긴 뒤 한 번만 실행하세요.
 
@@ -101,13 +103,20 @@ cmd login
 
 Meter는 그 CLI가 쓰는 것과 동일한 `alpha/billing/credits`·`alpha/usage/summary` 경로를 동일한 API 키로 호출합니다. 키는 `COMMAND_CODE_API_KEY`, `meter set-key command-code`로 저장한 키, `~/.commandcode/auth.json` 순으로 찾습니다. 브라우저는 관여하지 않으며 실행 중이어야 하는 것도 없습니다.
 
+
+### OpenCode Go
+
+OpenCode에서 OpenCode Go를 한 번 연결합니다(`/connect` → OpenCode Go). OpenCode는 키를 `~/.local/share/opencode/auth.json`에 저장하며, Meter는 이 파일에서 `opencode-go` 항목만 읽습니다. 키는 `OPENCODE_GO_API_KEY`, `meter set-key opencode-go`로 저장한 키, OpenCode의 파일 순으로 찾습니다.
+
+OpenCode는 Go 사용량 API를 공식 문서로 제공하지 않습니다. Meter는 OpenCode 콘솔이 읽는 `opencode.ai/zen/go/v1/usage` 경로를 그 키로 호출하고, 5시간·주간·월간 한도를 퍼센트로 표시합니다.
+
 ## 개인정보 보호 및 안정성
 
 - 자격 증명, 쿠키, 토큰을 로그에 남기지 않습니다.
 - 자격 증명은 로컬 키체인, 각 서비스 공식 CLI가 기록한 파일, 사용자가 Meter에 준 키에서 읽으며, 발급한 서비스에만 전송됩니다.
 - 모든 제공자는 해당 서비스의 공식 클라이언트가 쓰는 API로 접근합니다.
 - JWT는 `sub` 클레임만 읽습니다. Meter는 토큰을 검증하거나 생성하거나 다른 곳으로 보내지 않습니다.
-- Cursor와 Command Code는 비공개 대시보드 엔드포인트를 사용하므로 대시보드가 변경되면 유지보수가 필요할 수 있습니다.
+- Cursor, Command Code, OpenCode Go는 비공개 대시보드 엔드포인트를 사용하므로 대시보드가 변경되면 유지보수가 필요할 수 있습니다.
 - 갱신에 실패해도 마지막 정상 스냅샷을 지우지 않고 오래된 데이터로 표시합니다.
 - 모든 제공자 요청은 15초 후 타임아웃됩니다.
 
@@ -116,6 +125,7 @@ Meter는 그 CLI가 쓰는 것과 동일한 `alpha/billing/credits`·`alpha/usag
 - **Codex를 사용할 수 없음:** Codex 앱 또는 CLI에서 로그인한 뒤 Meter를 새로고침합니다.
 - **Cursor를 사용할 수 없음:** Cursor 앱에 로그인한 뒤 Meter를 새로고침합니다.
 - **Command Code를 사용할 수 없음:** `cmd login`으로 로그인하거나 `meter set-key command-code`로 키를 지정합니다.
+- **OpenCode Go를 사용할 수 없음:** OpenCode에서 `/connect`로 OpenCode Go를 연결하거나 `meter set-key opencode-go`로 키를 지정합니다.
 - **실행할 때마다 키체인 프롬프트가 뜸:** ad-hoc 서명 빌드라 리빌드마다 신원이 바뀌기 때문입니다. [서명](#서명)을 참고하세요.
 - **DeepSeek을 사용할 수 없음:** `meter set-key deepseek`을 실행합니다. `DEEPSEEK_API_KEY`는 CLI에서는 동작하지만 Finder에서 실행한 앱은 볼 수 없으며, `meter doctor`가 이를 `blocked`로 보고합니다.
 - **Dock 아이콘이 없음:** 정상 동작입니다. 메뉴바의 게이지 아이콘을 사용하세요.
@@ -164,7 +174,7 @@ swift run meter disable deepseek
 
 기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다. 스키마 3은 필드를 바꾸지 않았고, `snapshots`와 doctor의 `credentials`가 메뉴에서 정한 순서(제공자를 직접 적으면 적은 순서)를 따른다는 표시입니다. 이 순서는 0.4.16~0.4.19에서 이미 스키마 2로 나갔으므로(doctor는 0.4.19만), 항목은 위치가 아니라 `provider`로 읽으세요.
 
-v0.4.21 릴리즈에는 `meter-0.4.21-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
+v0.4.22 릴리즈에는 `meter-0.4.22-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 
 ```sh
 ./Scripts/install-cli.sh

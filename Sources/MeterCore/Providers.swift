@@ -430,6 +430,52 @@ enum CursorUsageParser {
     }
 }
 
+/// OpenCode has no documented usage API for Go. This is the route its own console reads,
+/// which answers to the plan's API key; it may change without notice.
+struct OpenCodeGoUsageProvider: UsageProvider {
+    let id = ProviderID.openCodeGo
+    private let credential: any CredentialSource
+
+    init(credential: any CredentialSource = OpenCodeGoCredential()) {
+        self.credential = credential
+    }
+
+    func fetch() async -> UsageSnapshot {
+        do {
+            let data = try await AuthenticatedRequest.json(
+                "https://opencode.ai/zen/go/v1/usage", credential: credential, signInAt: "opencode.ai"
+            )
+            return try OpenCodeGoUsageParser.parse(data)
+        } catch {
+            return .unavailable(id, "OpenCode Go unavailable: \(error.localizedDescription)")
+        }
+    }
+}
+
+enum OpenCodeGoUsageParser {
+    static func parse(_ data: Data, now: Date = .now) throws -> UsageSnapshot {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let usage = root["usage"] as? [String: Any] else {
+            throw URLError(.cannotParseResponse)
+        }
+        let windows = [("rolling", "five-hour", "5-hour"), ("weekly", "weekly", "Weekly"), ("monthly", "monthly", "Monthly")]
+        let buckets: [UsageBucket] = windows.compactMap { key, id, label in
+            guard let window = usage[key] as? [String: Any], let percent = numericValue(window["percent"]) else { return nil }
+            let resetAt = (window["resetsAt"] as? String).flatMap(Self.date)
+            return .init(id: id, label: label, used: percent, limit: 100, remaining: max(0, 100 - percent), resetAt: resetAt, unit: .percent)
+        }
+        guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
+        return .init(provider: .openCodeGo, buckets: buckets, fetchedAt: now, source: "OpenCode Go usage", state: .live, message: nil)
+    }
+
+    /// With and without fractional seconds: the weekly reset came back as "…T00:00:00.000Z".
+    private static func date(_ value: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return withFraction.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+}
+
 struct CommandCodeUsageProvider: UsageProvider {
     let id = ProviderID.commandCode
     private let credential: any CredentialSource
