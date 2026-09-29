@@ -171,6 +171,7 @@ private struct ProviderCard: View {
                     ForEach(snapshot.buckets) { bucket in
                         UsageRow(bucket: bucket, isTightest: store.tightestLimit == BucketKey(provider: provider, bucketID: bucket.id))
                     }
+                    .opacity(snapshot.state == .stale ? 0.55 : 1)
                 } else {
                     Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
                         .font(.caption).foregroundStyle(.secondary)
@@ -188,14 +189,29 @@ private struct ProviderCard: View {
         }
     }
 
+    private var staleMessage: String? {
+        guard let snapshot = store.snapshots[provider], snapshot.state == .stale else { return nil }
+        return snapshot.message ?? "Showing the last figures that arrived."
+    }
+
     private var header: some View {
-        HStack {
+        HStack(spacing: 5) {
             Text(provider.title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(store.enabled(provider) ? .primary : .secondary)
+            if let staleMessage {
+                // Figures that stopped updating looked exactly like fresh ones, which is the
+                // same silence this app keeps finding in itself.
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help(staleMessage)
+            }
             Spacer()
+            // A checkbox, not a switch: five saturated blue pills were the loudest thing on
+            // screen, and blue now means "what is left" on every bar. One hue, one meaning.
             Toggle("", isOn: Binding(get: { store.enabled(provider) }, set: { store.setEnabled($0, for: provider) }))
-                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                .labelsHidden().toggleStyle(.checkbox).controlSize(.small)
         }
     }
 }
