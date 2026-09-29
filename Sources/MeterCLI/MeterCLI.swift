@@ -12,7 +12,7 @@ struct CLIResult {
 }
 
 struct MeterCLIApplication {
-    static let version = "0.4.18"
+    static let version = "0.4.19"
 
     let service: UsageService
     let settings: MeterSettings
@@ -47,8 +47,8 @@ struct MeterCLIApplication {
             return clearKey(for: provider)
         case .doctor:
             return doctor(json: options.json, strict: options.strict)
-        case .status(let explicitProviders):
-            return await status(explicitProviders, json: options.json, strict: options.strict)
+        case .status(let selection):
+            return await status(selection, json: options.json, strict: options.strict)
         }
     }
 
@@ -114,7 +114,7 @@ struct MeterCLIApplication {
     }
 
     private func doctor(json: Bool, strict: Bool) -> CLIResult {
-        let statuses = CredentialDoctor.diagnose()
+        let statuses = CredentialDoctor.diagnose(settings.providerOrder)
         let enabled = Set(settings.enabledProviders())
         let blocked = statuses.filter { enabled.contains($0.provider) && !$0.isUsable }
         let exitCode: Int32 = strict && !blocked.isEmpty ? 1 : 0
@@ -126,12 +126,12 @@ struct MeterCLIApplication {
         }
     }
 
-    private func status(_ explicitProviders: [ProviderID]?, json: Bool, strict: Bool) async -> CLIResult {
-        // Named providers keep the order they were typed in; everything else follows the order
-        // arranged in the menu, including `all`.
-        let selected = explicitProviders == ProviderID.allCases
-            ? settings.providerOrder
-            : explicitProviders ?? settings.enabledProviders()
+    private func status(_ selection: ProviderSelection, json: Bool, strict: Bool) async -> CLIResult {
+        let selected = switch selection {
+        case .enabled: settings.enabledProviders()
+        case .all: settings.providerOrder
+        case .named(let providers): providers
+        }
         guard !selected.isEmpty else {
             return .init(
                 standardOutput: "",

@@ -4,12 +4,15 @@ import Testing
 @testable import MeterCore
 
 @Test func parsesDefaultAndProviderStatusCommands() throws {
-    #expect(try CLIArgumentParser.parse([]) == .init(command: .status(nil), json: false, strict: false))
+    #expect(try CLIArgumentParser.parse([]) == .init(command: .status(.enabled), json: false, strict: false))
     #expect(
         try CLIArgumentParser.parse(["codex", "command-code", "--json", "--strict"])
-            == .init(command: .status([.codex, .commandCode]), json: true, strict: true)
+            == .init(command: .status(.named([.codex, .commandCode])), json: true, strict: true)
     )
-    #expect(try CLIArgumentParser.parse(["status", "all"]).command == .status(ProviderID.allCases))
+    #expect(try CLIArgumentParser.parse(["status", "all"]).command == .status(.all))
+    // Every name typed out is a named list, not `all`: it prints in the order typed.
+    let typed = ProviderID.allCases.map(\.rawValue)
+    #expect(try CLIArgumentParser.parse(typed).command == .status(.named(ProviderID.allCases)))
 }
 
 @Test func rejectsUnknownProvidersAndMissingMutationTargets() {
@@ -58,7 +61,7 @@ import Testing
         .cursor: StubProvider(snapshot: .unavailable(.cursor, "sign in")),
     ])
     let app = MeterCLIApplication(service: service, settings: MeterSettings(defaults: defaults))
-    let result = await app.run(.init(command: .status([.codex, .cursor]), json: false, strict: true))
+    let result = await app.run(.init(command: .status(.named([.codex, .cursor])), json: false, strict: true))
 
     #expect(result.exitCode == 1)
     #expect(result.standardOutput.contains("Codex"))
@@ -114,7 +117,7 @@ private struct StubProvider: UsageProvider {
 }
 
 @Test func recognisesClaudeAsAProvider() throws {
-    #expect(try CLIArgumentParser.parse(["claude"]).command == .status([.claude]))
+    #expect(try CLIArgumentParser.parse(["claude"]).command == .status(.named([.claude])))
     #expect(ProviderID.allCases.contains(.claude))
     #expect(ProviderID.claude.acceptsStoredKey)
     #expect(ProviderID.deepSeek.acceptsStoredKey)
@@ -177,4 +180,28 @@ private struct StubProvider: UsageProvider {
     #expect(CLITextFormatter.tightestWindow(in: [snapshot(81)]) == "claude/w")
     let coloured = CLITextFormatter.status([snapshot(91)], style: .color(trueColor: true))
     #expect(coloured.contains("\u{1B}[1mWeekly"))
+}
+
+@Test func aTieGoesToTheWindowListedFirst() {
+    func snapshot(_ provider: ProviderID) -> UsageSnapshot {
+        .init(provider: provider,
+              buckets: [.init(id: "w", label: "Weekly", used: 90, limit: 100, remaining: 10, resetAt: nil, unit: .percent)],
+              fetchedAt: .now, source: "test", state: .live, message: nil)
+    }
+    // The menu and the CLI share this rule, and both list providers in the arranged order.
+    #expect(TightestLimit.find(in: [snapshot(.cursor), snapshot(.codex)]) == BucketKey(provider: .cursor, bucketID: "w"))
+    #expect(CLITextFormatter.tightestWindow(in: [snapshot(.claude), snapshot(.codex)]) == "claude/w")
+}
+
+@Test func providersListFollowsTheArrangedOrder() throws {
+    let suite = "MeterCLITests.order.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let settings = MeterSettings(defaults: defaults)
+    settings.providerOrder = [.commandCode, .cursor, .codex, .claude, .deepSeek]
+
+    let names = CLITextFormatter.providers(settings: settings)
+        .split(separator: "\n")
+        .map { $0.split(separator: " ", omittingEmptySubsequences: true)[1] }
+    #expect(names == ["command-code", "cursor", "codex", "claude", "deepseek"])
 }

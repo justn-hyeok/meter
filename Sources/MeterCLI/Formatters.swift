@@ -31,19 +31,9 @@ enum CLITextFormatter {
         }.joined(separator: "\n\n")
     }
 
-    /// The window closest to its limit once anything reaches 80%, matching the menu's rule
-    /// so the two never disagree about which row matters.
+    /// The menu's rule, applied to the providers in the order they are printed.
     static func tightestWindow(in snapshots: [UsageSnapshot]) -> String? {
-        var tightest: (key: String, fraction: Double)?
-        for snapshot in snapshots {
-            for bucket in snapshot.buckets {
-                guard let fraction = bucket.fractionUsed, fraction >= 0.8 else { continue }
-                if tightest == nil || fraction > tightest!.fraction {
-                    tightest = ("\(snapshot.provider.rawValue)/\(bucket.id)", fraction)
-                }
-            }
-        }
-        return tightest?.key
+        TightestLimit.find(in: snapshots).map { "\($0.provider.rawValue)/\($0.bucketID)" }
     }
 
     private static func fit(_ value: String, width: Int) -> String {
@@ -56,7 +46,7 @@ enum CLITextFormatter {
     }
 
     static func providers(settings: MeterSettings) -> String {
-        ProviderID.allCases.map { provider in
+        settings.providerOrder.map { provider in
             "\(settings.enabled(provider) ? "enabled " : "disabled")  \(provider.rawValue.padding(toLength: 12, withPad: " ", startingAt: 0)) \(provider.title)"
         }.joined(separator: "\n")
     }

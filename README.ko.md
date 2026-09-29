@@ -36,7 +36,7 @@ Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor
 
 ## 설치
 
-[v0.4.18 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.18)에서 `Meter-0.4.18-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
+[v0.4.19 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.19)에서 `Meter-0.4.19-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
 
 **설치 후 필수:** 릴리즈는 공증되지 않아서, 브라우저가 붙인 격리 속성을 지우기 전까지 macOS가 실행을 막습니다. 앱을 옮긴 뒤 한 번만 실행하세요.
 
@@ -164,7 +164,7 @@ swift run meter disable deepseek
 
 기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다.
 
-v0.4.18 릴리즈에는 `meter-0.4.18-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
+v0.4.19 릴리즈에는 `meter-0.4.19-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 
 ```sh
 ./Scripts/install-cli.sh

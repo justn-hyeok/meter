@@ -1,8 +1,22 @@
 import Foundation
 import MeterCore
 
+/// Which providers a status query covers.
+///
+/// `all` is its own case. It used to expand to every provider in declaration order, and
+/// the query then recognised it by comparing against that list - so typing all five names
+/// in that order was taken for `all` and printed in the menu's order instead of as typed.
+enum ProviderSelection: Equatable {
+    /// Those switched on in settings, in the menu's order.
+    case enabled
+    /// Every provider, switched on or not, in the menu's order.
+    case all
+    /// Exactly these, in the order typed.
+    case named([ProviderID])
+}
+
 enum CLICommand: Equatable {
-    case status([ProviderID]?)
+    case status(ProviderSelection)
     case doctor
     case providers
     case enable([ProviderID])
@@ -67,15 +81,15 @@ enum CLIArgumentParser {
         }
 
         guard let first = positional.first else {
-            return .init(command: .status(nil), json: json, strict: strict)
+            return .init(command: .status(.enabled), json: json, strict: strict)
         }
 
         let rest = Array(positional.dropFirst())
         let command: CLICommand
         switch first {
-        case "status": command = .status(try parseProviders(rest, allowAll: true))
+        case "status": command = .status(try parseSelection(rest))
         case "set-key", "clear-key":
-            guard let providers = try parseProviders(rest, allowAll: false), providers.count == 1 else {
+            guard let providers = try parseProviders(rest), providers.count == 1 else {
                 throw CLIArgumentError.oneProviderRequired(first)
             }
             guard providers[0].acceptsStoredKey else {
@@ -90,15 +104,12 @@ enum CLIArgumentParser {
             command = .providers
         case "enable", "disable":
             guard !rest.isEmpty else { throw CLIArgumentError.missingProviders(first) }
-            guard let providers = try parseProviders(rest, allowAll: false), !providers.isEmpty else {
+            guard let providers = try parseProviders(rest), !providers.isEmpty else {
                 throw CLIArgumentError.missingProviders(first)
             }
             command = first == "enable" ? .enable(providers) : .disable(providers)
         default:
-            guard let providers = try parseProviders(positional, allowAll: true) else {
-                return .init(command: .status(nil), json: json, strict: strict)
-            }
-            command = .status(providers)
+            command = .status(try parseSelection(positional))
         }
 
         if json || strict {
@@ -110,9 +121,14 @@ enum CLIArgumentParser {
         return .init(command: command, json: json, strict: strict)
     }
 
-    private static func parseProviders(_ values: [String], allowAll: Bool) throws -> [ProviderID]? {
+    private static func parseSelection(_ values: [String]) throws -> ProviderSelection {
+        if values == ["all"] { return .all }
+        guard let providers = try parseProviders(values) else { return .enabled }
+        return .named(providers)
+    }
+
+    private static func parseProviders(_ values: [String]) throws -> [ProviderID]? {
         if values.isEmpty { return nil }
-        if allowAll, values == ["all"] { return ProviderID.allCases }
 
         var providers: [ProviderID] = []
         for value in values {

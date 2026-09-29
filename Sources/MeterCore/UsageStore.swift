@@ -12,6 +12,32 @@ public struct BucketKey: Hashable, Sendable {
     }
 }
 
+/// The window closest to its limit, but only once something is close enough for that to
+/// matter. Emphasising a row while everything sits at 5% would be noise, so below the
+/// threshold the answer is "nothing is urgent" rather than "this one is least fine".
+///
+/// The menu and the CLI both ask here. Each used to carry its own copy, and they broke ties
+/// differently - the menu by declaration order, the CLI by the order on screen - so two
+/// windows at the same percentage could be bold in one and plain in the other.
+public enum TightestLimit {
+    public static let threshold = 0.8
+
+    /// Ties go to the window listed first, so the bold row is the first of the equals the
+    /// reader comes to.
+    public static func find(in snapshots: [UsageSnapshot]) -> BucketKey? {
+        var tightest: (key: BucketKey, fraction: Double)?
+        for snapshot in snapshots {
+            for bucket in snapshot.buckets {
+                guard let fraction = bucket.fractionUsed, fraction >= threshold else { continue }
+                if tightest == nil || fraction > tightest!.fraction {
+                    tightest = (BucketKey(provider: snapshot.provider, bucketID: bucket.id), fraction)
+                }
+            }
+        }
+        return tightest?.key
+    }
+}
+
 /// Menu bar state: which providers are on, their latest snapshots, and the value that
 /// drives the gauge.
 ///
@@ -211,30 +237,14 @@ public final class UsageStore {
         return fetchCounter
     }
 
+    /// Follows the order on screen, so a tie goes to the card nearer the top.
+    public var tightestLimit: BucketKey? {
+        TightestLimit.find(in: providerOrder.compactMap { snapshots[$0] })
+    }
+
     /// Every enabled provider answered and none produced data. `highestUsage` is nil for
     /// this and for "nothing enabled" alike, and the menu drew both as a zero-percent
     /// needle - a total credential failure looked like a healthy, idle account.
-    /// The window closest to its limit, but only once something is close enough for that
-    /// to matter. Emphasising a row while everything sits at 5% would be noise, so below the
-    /// threshold the answer is "nothing is urgent" rather than "this one is least fine".
-    public var tightestLimit: BucketKey? {
-        var tightest: (key: BucketKey, fraction: Double)?
-        for provider in ProviderID.allCases {
-            guard let snapshot = snapshots[provider] else { continue }
-            for bucket in snapshot.buckets {
-                guard let fraction = bucket.fractionUsed,
-                      fraction >= Self.urgentFraction else { continue }
-                if tightest == nil || fraction > tightest!.fraction {
-                    tightest = (BucketKey(provider: provider, bucketID: bucket.id), fraction)
-                }
-            }
-        }
-        return tightest?.key
-    }
-
-    /// Where a window starts to deserve attention.
-    static let urgentFraction = 0.8
-
     public var isAllUnavailable: Bool {
         !enabledProviders.isEmpty && enabledProviders.allSatisfy { snapshots[$0]?.buckets.isEmpty ?? false }
     }
