@@ -74,13 +74,25 @@ public enum Keychain {
         SecretCache.shared.forget(service)
     }
 
-    public static func genericPassword(service: String) throws -> String {
-        try SecretCache.shared.value(for: service) { try readFromKeychain(service: service) }
+    /// Reads the item for `service`, preferring the one filed under `account` when given.
+    ///
+    /// Other software can file a second item under the same service name, and without an
+    /// account the keychain returns whichever it finds first. Claude Code 2.1.284 did this:
+    /// a new item under account "unknown" holding only MCP sign-ins sat beside the real one
+    /// under the login name, and Meter read the wrong one. An account that has no item falls
+    /// back to any item for the service.
+    public static func genericPassword(service: String, account: String? = nil) throws -> String {
+        try SecretCache.shared.value(for: service) {
+            if let account {
+                do { return try readFromKeychain(service: service, account: account) } catch KeychainError.notFound {}
+            }
+            return try readFromKeychain(service: service, account: nil)
+        }
     }
 
-    private static func readFromKeychain(service: String) throws -> String {
+    private static func readFromKeychain(service: String, account: String?) throws -> String {
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(query(service: service, returnData: true), &item)
+        let status = SecItemCopyMatching(query(service: service, account: account, returnData: true), &item)
         switch status {
         case errSecSuccess:
             guard let data = item as? Data,
@@ -115,7 +127,7 @@ public enum Keychain {
     /// non-interactive keychain is distinguishable here.
     public static func probe(service: String) -> Presence {
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(query(service: service, returnData: false), &item)
+        let status = SecItemCopyMatching(query(service: service, account: nil, returnData: false), &item)
         switch status {
         case errSecSuccess: return .present
         case errSecItemNotFound: return .missing
@@ -124,12 +136,13 @@ public enum Keychain {
         }
     }
 
-    private static func query(service: String, returnData: Bool) -> CFDictionary {
+    private static func query(service: String, account: String?, returnData: Bool) -> CFDictionary {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        if let account { query[kSecAttrAccount as String] = account }
         query[(returnData ? kSecReturnData : kSecReturnAttributes) as String] = true
         if returnData, !allowInteraction {
             // Fail instead of drawing a dialog the user did not ask for.

@@ -34,7 +34,7 @@ private func loadFixture(_ name: String) throws -> Data {
     #expect(highest == 0.44)
 }
 
-// MARK: - Alerts
+// MARK: - Store races
 
 private func window(_ provider: ProviderID, used: Double, resetAt: Date? = nil) -> UsageSnapshot {
     .init(
@@ -46,27 +46,6 @@ private func window(_ provider: ProviderID, used: Double, resetAt: Date? = nil) 
         message: nil
     )
 }
-
-@Test func doesNotAnnounceAThresholdWhileUsageIsFalling() {
-    var tracker = UsageAlertTracker()
-    #expect(tracker.alerts(for: [window(.codex, used: 96)]).map(\.threshold) == [95])
-
-    // Rolling windows decay as old usage ages out. Dropping from the 95 band into the 80
-    // band is not a crossing, and announcing it made an oscillating window notify forever.
-    #expect(tracker.alerts(for: [window(.codex, used: 85)]).isEmpty)
-    #expect(tracker.alerts(for: [window(.codex, used: 96)]).isEmpty)
-    #expect(tracker.alerts(for: [window(.codex, used: 85)]).isEmpty)
-    #expect(tracker.alerts(for: [window(.codex, used: 90)]).isEmpty)
-}
-
-@Test func announcesAgainOnlyAfterFallingUnderEveryThreshold() {
-    var tracker = UsageAlertTracker()
-    #expect(tracker.alerts(for: [window(.cursor, used: 96)]).map(\.threshold) == [95])
-    #expect(tracker.alerts(for: [window(.cursor, used: 40)]).isEmpty)
-    #expect(tracker.alerts(for: [window(.cursor, used: 82)]).map(\.threshold) == [80])
-}
-
-// MARK: - Store races and the alert gate
 
 private actor Gate {
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -119,10 +98,6 @@ private struct SequencedProvider: UsageProvider {
         }
         return later
     }
-}
-
-private final class AlertBox: @unchecked Sendable {
-    var alerts: [UsageAlert] = []
 }
 
 private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Void) {
@@ -189,57 +164,6 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     await batch.value
     // The stale batch result must not demote the newer success to stale.
     #expect(store.snapshots[.deepSeek]?.state == .live)
-}
-
-@MainActor
-@Test func aCrossingWhileNotificationsAreOffIsAnnouncedOnceTheyAreBackOn() async throws {
-    let (settings, cleanup) = try isolatedSettingsForRegression()
-    defer { cleanup() }
-    settings.alertsEnabled = false
-
-    let box = AlertBox()
-    let store = UsageStore(
-        settings: settings,
-        service: UsageService(providers: [
-            .codex: GatedProvider(id: .codex, gate: { let g = Gate(); Task { await g.open() }; return g }(), snapshot: window(.codex, used: 96)),
-        ]),
-        refreshOnEnable: false
-    )
-    store.onAlerts = { box.alerts.append(contentsOf: $0) }
-
-    await store.refreshAll()
-    #expect(box.alerts.isEmpty)
-
-    // Turning notifications on must not find the crossing already marked as announced.
-    store.setAlertsEnabled(true)
-    await store.refreshAll()
-    #expect(box.alerts.map(\.threshold) == [95])
-}
-
-// MARK: - Key file robustness
-
-@Test func oneUnexpectedValueDoesNotHideOrDestroyTheOtherKeys() throws {
-    let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "MeterTests-\(UUID().uuidString)")
-    let file = directory.appending(path: "credentials.json")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-    // A future version, a hand edit, or a partially written file can leave a value that is
-    // not a string. Casting the whole document meant every key read as nil and the next
-    // write replaced the file with just that one key.
-    try Data(#"{"deepseek":"sk-KEEP-ME","command-code":{"legacy":true}}"#.utf8).write(to: file)
-    let store = SecretStore(fileURL: file)
-
-    #expect(store.secret(for: .deepSeek) == "sk-KEEP-ME")
-    #expect(store.secret(for: .commandCode) == nil)
-
-    try store.setSecret("cc-new", for: .commandCode)
-    #expect(store.secret(for: .deepSeek) == "sk-KEEP-ME")
-    #expect(store.secret(for: .commandCode) == "cc-new")
-
-    // Anything it did not understand is left alone rather than dropped.
-    let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
-    #expect(raw?.count == 2)
 }
 
 @MainActor
@@ -366,4 +290,175 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     }
 
     #expect(Keychain.allowInteraction == false)
+}
+
+@Test func resetTimesUseTheShortestFormThatIsStillActionable() {
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    func bucket(_ offset: TimeInterval?) -> UsageBucket {
+        .init(id: "w", label: "Weekly", used: 50, limit: 100, remaining: 50,
+              resetAt: offset.map { now.addingTimeInterval($0) }, unit: .percent)
+    }
+
+    // A percentage on its own is not a decision: 92% with five days left is trouble, 92%
+    // with two hours left is nothing. The menu dropped this while the CLI always had it.
+    #expect(UsageFormat.reset(bucket(5 * 86_400 + 3 * 3_600), now: now) == "5d")
+    #expect(UsageFormat.reset(bucket(13 * 3_600), now: now) == "13h")
+    #expect(UsageFormat.reset(bucket(90), now: now) == "1m")
+    #expect(UsageFormat.reset(bucket(-60), now: now) == "due")
+    #expect(UsageFormat.reset(bucket(nil), now: now) == nil)
+}
+
+@Test func aWindowWithNoReportedResetIsNotLeftBlank() {
+    // Command Code reports resetAt 0 for its rolling windows. A blank column beside
+    // neighbours showing "4d" reads as a rendering fault rather than as missing data.
+    let noReset = UsageBucket(id: "w", label: "Weekly", used: 0, limit: 35, remaining: 35, resetAt: nil, unit: .credits)
+    #expect(UsageFormat.reset(noReset) == nil)
+    #expect((UsageFormat.reset(noReset) ?? "—") == "—")
+}
+
+@MainActor
+@Test func onlyAWindowWorthActingOnIsSingledOut() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+
+    func store(_ used: Double...) -> UsageStore {
+        let buckets = used.enumerated().map { index, value in
+            UsageBucket(id: "w\(index)", label: "W\(index)", used: value, limit: 100,
+                        remaining: 100 - value, resetAt: nil, unit: .percent)
+        }
+        let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+        store.replaceSnapshotForTesting(.init(provider: .codex, buckets: buckets,
+                                              fetchedAt: .now, source: "test", state: .live, message: nil))
+        return store
+    }
+
+    // Nothing near a limit means nothing to point at; bolding the least-fine row while
+    // everything sits at 5% is noise, not emphasis.
+    #expect(store(5, 40, 70).tightestLimit == nil)
+    #expect(store(5, 40, 81).tightestLimit == BucketKey(provider: .codex, bucketID: "w2"))
+    #expect(store(96, 40, 81).tightestLimit == BucketKey(provider: .codex, bucketID: "w0"))
+}
+
+@MainActor
+@Test func staleFiguresAreDistinguishableFromFreshOnes() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+
+    let gate = Gate()
+    let store = UsageStore(
+        settings: settings,
+        service: UsageService(providers: [
+            .codex: SequencedProvider(
+                id: .codex, gate: gate, counter: CallCounter(),
+                first: window(.codex, used: 60),
+                later: .unavailable(.codex, "app-server timed out")
+            ),
+        ]),
+        refreshOnEnable: false
+    )
+    await gate.open()
+
+    await store.refreshAll()
+    #expect(store.snapshots[.codex]?.state == .live)
+
+    // The figures survive a failed refresh - that is the point - but the menu has to say
+    // they stopped updating rather than presenting them as current.
+    await store.refreshAll()
+    let snapshot = try #require(store.snapshots[.codex])
+    #expect(snapshot.state == .stale)
+    #expect(snapshot.buckets.first?.used == 60)
+    #expect(snapshot.message == "app-server timed out")
+}
+
+@Test func commandCodeDoesNotInventAMonthlyCapOnceTheBalanceIsGone() throws {
+    // Both fields describe the same period while credits remain, so the pair gives the cap.
+    let withBalance = try CommandCodeUsageParser.parse(Data(#"""
+    {"credits":{"credits":{"monthlyCredits":5.27},"windowLimits":{}},"summary":{"totalMonthlyCredits":64.73}}
+    """#.utf8))
+    let coherent = try #require(withBalance.buckets.first { $0.id == "monthly" })
+    #expect(coherent.limit == 70)
+    #expect(coherent.percentageUsed.map { ($0 * 100).rounded() / 100 } == 92.47)
+
+    // Once the balance is zero the billing period has rolled: spend restarts near nothing
+    // while the balance stays at 0. Summing them produced a cap of 0.0086 credits and a
+    // "100% used" beside a few thousandths actually spent - which also seized the menu bar
+    // needle and the tightest-limit emphasis.
+    let depleted = try CommandCodeUsageParser.parse(Data(#"""
+    {"credits":{"credits":{"monthlyCredits":0},"windowLimits":{}},"summary":{"totalMonthlyCredits":0.008591345}}
+    """#.utf8))
+    let balance = try #require(depleted.buckets.first { $0.id == "monthly" })
+    #expect(balance.limit == nil)
+    #expect(balance.used == nil)
+    #expect(balance.remaining == 0)
+    #expect(balance.percentageUsed == nil)
+    #expect(balance.fractionUsed == nil)
+}
+
+@Test func balancesDropDecimalsThatSayNothing() {
+    func balance(_ value: Double) -> UsageBucket {
+        .init(id: "b", label: "Monthly credits", used: nil, limit: nil, remaining: value, resetAt: nil, unit: .credits)
+    }
+    // "0.00 credits" was wide enough to wrap the row onto two lines, which broke the
+    // alignment every other row depends on.
+    #expect(UsageFormat.value(balance(0)) == "0 credits")
+    #expect(UsageFormat.value(balance(8.6)) == "8.6 credits")
+    #expect(UsageFormat.value(balance(64.725)) == "64.73 credits")
+}
+
+@MainActor
+@Test func aDraggedCardTakesThePlaceOfTheOneItPasses() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    #expect(store.providerOrder == [.codex, .claude, .cursor, .deepSeek, .commandCode])
+
+    // Down the list: lands after the card it passed.
+    store.move(.codex, to: .cursor)
+    #expect(store.providerOrder == [.claude, .cursor, .codex, .deepSeek, .commandCode])
+
+    // Up the list: lands before it.
+    store.move(.commandCode, to: .claude)
+    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek])
+
+    // Dropping on itself changes nothing.
+    store.move(.cursor, to: .cursor)
+    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek])
+
+    // Saved, so a restart comes back the same way.
+    #expect(settings.providerOrder == store.providerOrder)
+}
+
+@Test func theServiceAnswersInTheOrderItWasAsked() async {
+    let service = UsageService(providers: [
+        .codex: GatedProvider(id: .codex, gate: { let g = Gate(); Task { await g.open() }; return g }(), snapshot: window(.codex, used: 1)),
+        .claude: GatedProvider(id: .claude, gate: { let g = Gate(); Task { await g.open() }; return g }(), snapshot: window(.claude, used: 1)),
+        .cursor: GatedProvider(id: .cursor, gate: { let g = Gate(); Task { await g.open() }; return g }(), snapshot: window(.cursor, used: 1)),
+    ])
+    // It used to re-sort into declaration order, which would have undone the arrangement.
+    let results = await service.fetch([.cursor, .codex, .claude])
+    #expect(results.map(\.provider) == [.cursor, .codex, .claude])
+}
+
+@Test func oneUnexpectedValueDoesNotHideOrDestroyTheOtherKeys() throws {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "MeterTests-\(UUID().uuidString)")
+    let file = directory.appending(path: "credentials.json")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    // A future version, a hand edit, or a partially written file can leave a value that is
+    // not a string. Casting the whole document meant every key read as nil and the next
+    // write replaced the file with just that one key.
+    try Data(#"{"deepseek":"sk-KEEP-ME","command-code":{"legacy":true}}"#.utf8).write(to: file)
+    let store = SecretStore(fileURL: file)
+
+    #expect(store.secret(for: .deepSeek) == "sk-KEEP-ME")
+    #expect(store.secret(for: .commandCode) == nil)
+
+    try store.setSecret("cc-new", for: .commandCode)
+    #expect(store.secret(for: .deepSeek) == "sk-KEEP-ME")
+    #expect(store.secret(for: .commandCode) == "cc-new")
+
+    // Anything it did not understand is left alone rather than dropped.
+    let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+    #expect(raw?.count == 2)
 }

@@ -62,3 +62,25 @@ import Testing
     #expect(settings.enabled(.commandCode))
     #expect(!settings.enabled(.cursor))
 }
+
+@Test func providerOrderSurvivesRestartsAndAbsorbsNewProviders() throws {
+    let suiteName = "MeterTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let settings = MeterSettings(defaults: defaults)
+    #expect(settings.providerOrder == ProviderID.allCases)
+
+    settings.providerOrder = [.commandCode, .claude, .codex, .cursor, .deepSeek]
+    #expect(MeterSettings(defaults: defaults).providerOrder == [.commandCode, .claude, .codex, .cursor, .deepSeek])
+
+    // A list saved before a provider existed, with junk and a duplicate in it: the unknown
+    // name goes, the duplicate is kept once, and missing providers join at the end.
+    defaults.set(["claude", "not-a-provider", "claude", "codex"], forKey: "providers.order")
+    #expect(settings.providerOrder == [.claude, .codex, .cursor, .deepSeek, .commandCode])
+
+    // Enabled providers come back in the arranged order, which is what the CLI prints.
+    // Cursor is off by default and DeepSeek is switched off here.
+    settings.setEnabled(false, for: .deepSeek)
+    #expect(settings.enabledProviders() == [.claude, .codex, .commandCode])
+}

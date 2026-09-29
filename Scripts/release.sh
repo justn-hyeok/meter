@@ -25,13 +25,32 @@ plutil -replace CFBundleVersion -string "$((build + 1))" Resources/Info.plist
 /usr/bin/sed -i '' "s/$current/$version/g" README.md README.ko.md
 
 echo "==> tests"
-swift test 2>&1 | tail -1
+# Piping straight into tail threw away the exit status, so a failing suite still released.
+test_log=$(mktemp)
+if ! swift test >"$test_log" 2>&1; then
+    tail -40 "$test_log" >&2
+    rm -f "$test_log"
+    echo "error: tests failed" >&2
+    exit 1
+fi
+tail -1 "$test_log"
+rm -f "$test_log"
 
 echo "==> artifacts"
-"$project_dir/Scripts/package-release.sh" | tail -2
+package_log=$(mktemp)
+if ! "$project_dir/Scripts/package-release.sh" >"$package_log" 2>&1; then
+    tail -40 "$package_log" >&2
+    rm -f "$package_log"
+    echo "error: packaging failed" >&2
+    exit 1
+fi
+tail -2 "$package_log"
+rm -f "$package_log"
 
 echo "==> publish"
-git add -A Sources Resources README.md README.ko.md Scripts
+# Everything goes in. The list of folders here once left out Tests/, so from 0.4.3 on the
+# suite that passed above was never the one committed, and v0.4.16's did not even compile.
+git add -A
 git commit -q -m "Release Meter $version" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git tag -a "v$version" -m "Meter $version"
 git push -q origin HEAD

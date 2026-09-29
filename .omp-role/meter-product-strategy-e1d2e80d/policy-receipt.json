@@ -1,0 +1,23 @@
+{
+  "alternatives": [],
+  "attempts": 1,
+  "automatic_fallback": false,
+  "chosen_model": "openai-codex/gpt-6-astra",
+  "effort": "medium",
+  "effort_availability": "configurable",
+  "fallbacks": [],
+  "invocation_marker": "user_request:astra",
+  "provenance": "registry_default",
+  "role": "plan",
+  "status": "selected",
+  "tui": {
+    "model_argument": [
+      "--model",
+      "openai-codex/gpt-6-astra"
+    ],
+    "thinking_argument": [
+      "--thinking",
+      "medium"
+    ]
+  }
+}

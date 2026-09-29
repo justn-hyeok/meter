@@ -119,3 +119,62 @@ private struct StubProvider: UsageProvider {
     #expect(ProviderID.claude.acceptsStoredKey)
     #expect(ProviderID.deepSeek.acceptsStoredKey)
 }
+
+@Test func colourIsOnlyForAPersonAtATerminal() {
+    // `meter | grep` and scripts must never see escape codes.
+    #expect(TerminalStyle.detect(environment: [:], isTerminal: false) == .plain)
+    #expect(TerminalStyle.detect(environment: ["NO_COLOR": "1"], isTerminal: true) == .plain)
+    #expect(TerminalStyle.detect(environment: ["TERM": "dumb"], isTerminal: true) == .plain)
+    #expect(TerminalStyle.detect(environment: ["COLORTERM": "truecolor"], isTerminal: true) == .color(trueColor: true))
+    #expect(TerminalStyle.detect(environment: ["TERM": "xterm-256color"], isTerminal: true) == .color(trueColor: false))
+}
+
+@Test func barsResolveToEighthsOfACell() {
+    // Ten columns alone would draw 25% and 29% identically.
+    #expect(UsageBarRenderer.render(0.25, width: 10, style: .plain) == "██▌░░░░░░░")
+    #expect(UsageBarRenderer.render(0.29, width: 10, style: .plain) == "██▉░░░░░░░")
+    #expect(UsageBarRenderer.render(0, width: 10, style: .plain) == "░░░░░░░░░░")
+    #expect(UsageBarRenderer.render(1, width: 10, style: .plain) == "██████████")
+    // No limit to divide by: no bar at all rather than an empty one that looks like 0%.
+    #expect(UsageBarRenderer.render(nil, width: 10, style: .plain) == "          ")
+}
+
+@Test func colourBarsUseTheMenusPairAndEmitNothingEmpty() {
+    let bar = UsageBarRenderer.render(0.25, width: 10, style: .color(trueColor: true))
+    #expect(bar.contains("38;2;217;89;38"))          // spent, orange
+    #expect(bar.contains("38;2;57;135;229"))         // left, blue
+    #expect(bar.contains("48;2;57;135;229m▌"))       // the shared cell: orange on blue
+    let empty = UsageBarRenderer.render(0, width: 10, style: .color(trueColor: true))
+    #expect(!empty.contains("217;89;38"))            // no zero-width orange run
+}
+
+@Test func statusLinesMatchTheMenuLayout() {
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    let snapshot = UsageSnapshot(
+        provider: .codex,
+        buckets: [
+            .init(id: "w", label: "Weekly", used: 25, limit: 100, remaining: 75,
+                  resetAt: now.addingTimeInterval(4 * 86_400 + 3_600), unit: .percent),
+            .init(id: "s", label: "Total spend", used: 136.08, limit: nil, remaining: nil, resetAt: nil, unit: .usd),
+        ],
+        fetchedAt: now, source: "test", state: .live, message: nil
+    )
+    let lines = CLITextFormatter.status([snapshot], now: now).split(separator: "\n").map(String.init)
+    #expect(lines == [
+        "Codex",
+        "  Weekly                ██▌░░░░░░░         25%   4d",
+        "  Total spend                          $136.08    —",
+    ])
+}
+
+@Test func onlyAWindowPastEightyPercentIsEmphasised() {
+    func snapshot(_ used: Double) -> UsageSnapshot {
+        .init(provider: .claude,
+              buckets: [.init(id: "w", label: "Weekly", used: used, limit: 100, remaining: 100 - used, resetAt: nil, unit: .percent)],
+              fetchedAt: .now, source: "test", state: .live, message: nil)
+    }
+    #expect(CLITextFormatter.tightestWindow(in: [snapshot(79)]) == nil)
+    #expect(CLITextFormatter.tightestWindow(in: [snapshot(81)]) == "claude/w")
+    let coloured = CLITextFormatter.status([snapshot(91)], style: .color(trueColor: true))
+    #expect(coloured.contains("\u{1B}[1mWeekly"))
+}

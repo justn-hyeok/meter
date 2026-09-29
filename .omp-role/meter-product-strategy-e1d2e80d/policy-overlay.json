@@ -1,0 +1,10 @@
+{
+  "modelRoles": {
+    "default": "openai-codex/gpt-6-astra:medium",
+    "plan": "openai-codex/gpt-6-astra:medium"
+  },
+  "retry": {
+    "fallbackChains": {},
+    "modelFallback": false
+  }
+}

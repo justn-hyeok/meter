@@ -64,7 +64,10 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
     private let readCredentials: @Sendable () throws -> String
 
     public init(store: SecretStore = .default) {
-        self.init(store: store, readCredentials: { try Keychain.genericPassword(service: Self.keychainService) })
+        self.init(store: store, readCredentials: {
+            // Claude Code files its sign-in under the login name.
+            try Keychain.genericPassword(service: Self.keychainService, account: NSUserName())
+        })
     }
 
     init(store: SecretStore = .default, readCredentials: @escaping @Sendable () throws -> String) {
