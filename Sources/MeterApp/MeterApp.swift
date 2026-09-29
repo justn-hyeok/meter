@@ -67,7 +67,7 @@ private struct MeterMenu: View {
             .font(.caption)
             .padding(12)
         }
-        .frame(width: 340)
+        .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
         // Opening the menu is the moment a keychain dialog is welcome; the five-minute
         // refresh never raises one.
@@ -116,8 +116,8 @@ private struct SettingsRows: View {
             }
         }
         .toggleStyle(.switch)
-        .controlSize(.mini)
-        .font(.caption)
+        .controlSize(.small)
+        .font(.callout)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .task { notifier.refreshPermission() }
@@ -174,7 +174,7 @@ private struct ProviderCard: View {
                     .opacity(snapshot.state == .stale ? 0.55 : 1)
                 } else {
                     Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.callout).foregroundStyle(.secondary)
                 }
                 if store.needsKey(provider) {
                     KeyField(provider: provider, store: store)
@@ -197,7 +197,7 @@ private struct ProviderCard: View {
     private var header: some View {
         HStack(spacing: 5) {
             Text(provider.title)
-                .font(.subheadline.weight(.semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(store.enabled(provider) ? .primary : .secondary)
             if let staleMessage {
                 // Figures that stopped updating looked exactly like fresh ones, which is the
@@ -235,21 +235,21 @@ private struct UsageRow: View {
                 .foregroundStyle(isTightest ? .primary : .secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(width: 112, alignment: .leading)
+                .frame(width: 124, alignment: .leading)
 
             UsageBar(fraction: bucket.fractionUsed)
 
             Text(UsageFormat.value(bucket))
                 .monospacedDigit()
                 .fontWeight(isTightest ? .semibold : .regular)
-                .frame(width: 46, alignment: .trailing)
+                .frame(width: 54, alignment: .trailing)
 
             Text(UsageFormat.reset(bucket) ?? "—")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .frame(width: 26, alignment: .trailing)
+                .frame(width: 32, alignment: .trailing)
         }
-        .font(.caption)
+        .font(.callout)
         .help(UsageFormat.detail(bucket))
     }
 }
@@ -280,8 +280,8 @@ private struct UsageBar: View {
                 Rectangle().fill(MeterPalette.remaining.opacity(0.18))
             }
         }
-        .frame(height: 6)
-        .clipShape(.rect(cornerRadius: 3))
+        .frame(height: 7)
+        .clipShape(.rect(cornerRadius: 3.5))
     }
 }
 
@@ -292,7 +292,7 @@ private struct MeterLegend: View {
             swatch(MeterPalette.remaining, "left")
             Spacer()
         }
-        .font(.caption2)
+        .font(.caption)
         .foregroundStyle(.secondary)
     }
 
