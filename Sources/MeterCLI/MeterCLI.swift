@@ -12,7 +12,7 @@ struct CLIResult {
 }
 
 struct MeterCLIApplication {
-    static let version = "0.4.14"
+    static let version = "0.4.15"
 
     let service: UsageService
     let settings: MeterSettings
@@ -144,7 +144,7 @@ struct MeterCLIApplication {
         do {
             let output = json
                 ? try CLIJSONFormatter.status(snapshots)
-                : CLITextFormatter.status(snapshots)
+                : CLITextFormatter.status(snapshots, style: .detect())
             return .init(standardOutput: output, standardError: "", exitCode: exitCode)
         } catch {
             return .init(standardOutput: "", standardError: "Could not encode output: \(error.localizedDescription)", exitCode: 2)

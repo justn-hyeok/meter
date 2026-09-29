@@ -35,7 +35,7 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 ## Install
 
-Download `Meter-0.4.14-macos-universal-app.zip` from the [v0.4.14 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.14), extract it, and move `Meter.app` to `/Applications`.
+Download `Meter-0.4.15-macos-universal-app.zip` from the [v0.4.15 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.15), extract it, and move `Meter.app` to `/Applications`.
 
 **Required after downloading:** the release is not notarized, so macOS refuses to launch it until you clear the quarantine flag the browser attached. Run this once after moving the app:
 
@@ -164,7 +164,7 @@ With no provider argument, `meter` queries the providers enabled in the shared s
 
 The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`.
 
-The v0.4.14 release also includes `meter-0.4.14-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
+The v0.4.15 release also includes `meter-0.4.15-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh

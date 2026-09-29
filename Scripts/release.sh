@@ -40,3 +40,10 @@ gh release create "v$version" \
     "dist/Meter-$version-macos-universal-app.zip" \
     "dist/meter-$version-macos-universal-cli.zip" \
     --title "Meter $version" --notes-file "$notes"
+
+# The installed CLI is part of the release too: the app went to 0.4.14 while the `meter`
+# on PATH sat at 0.3.0, and nothing noticed.
+echo "==> local CLI"
+"$project_dir/Scripts/install-cli.sh" >/dev/null
+"${PREFIX:-$HOME/.local}/bin/meter" --version
+
