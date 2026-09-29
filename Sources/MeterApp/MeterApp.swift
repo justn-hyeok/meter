@@ -36,6 +36,7 @@ struct MeterApp: App {
 private struct MeterMenu: View {
     @Bindable var store: UsageStore
     @State private var drag = CardDrag()
+    @State private var cardsHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -52,20 +53,27 @@ private struct MeterMenu: View {
             .padding(14)
 
             Divider()
-            VStack(spacing: 8) {
-                ForEach(store.order) { account in
-                    ProviderCard(account: account, store: store, tightest: tightest, drag: drag, animation: reorderAnimation)
-                        // The carried card leaves an empty place behind: the card itself is what
-                        // moves under the pointer, and a faded copy made it look like two.
-                        .opacity(drag.account == account ? 0 : 1)
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(CardDrag.space)) } action: {
-                            drag.frames[account] = $0
-                        }
-                        .accessibilityAction(named: "Move up") { moveByKeyboard(account, by: -1) }
-                        .accessibilityAction(named: "Move down") { moveByKeyboard(account, by: 1) }
+            // Scrolls once the cards outgrow the screen. Each named account adds a card, and a
+            // menu taller than the screen pushed the settings and Quit out of reach.
+            ScrollView(.vertical) {
+                VStack(spacing: 8) {
+                    ForEach(store.order) { account in
+                        ProviderCard(account: account, store: store, tightest: tightest, drag: drag, animation: reorderAnimation)
+                            // The carried card leaves an empty place behind: the card itself is what
+                            // moves under the pointer, and a faded copy made it look like two.
+                            .opacity(drag.account == account ? 0 : 1)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(CardDrag.space)) } action: {
+                                drag.frames[account] = $0
+                            }
+                            .accessibilityAction(named: "Move up") { moveByKeyboard(account, by: -1) }
+                            .accessibilityAction(named: "Move down") { moveByKeyboard(account, by: 1) }
+                    }
                 }
+                .padding(12)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardsHeight = $0 }
             }
-            .padding(12)
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: min(cardsHeight, maxCardsHeight))
             MeterLegend().padding(.horizontal, 12).padding(.bottom, 10)
             Divider()
             SettingsRows(store: store)
@@ -91,6 +99,11 @@ private struct MeterMenu: View {
 }
 
 extension MeterMenu {
+    /// What is left of the screen once the header, legend, settings and footer are placed.
+    private var maxCardsHeight: CGFloat {
+        max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 240)
+    }
+
     /// The card being carried, drawn at full size under the pointer with a shadow to show
     /// it is off the list. It moves only up and down, the one direction the list reorders.
     @ViewBuilder private var liftedCard: some View {

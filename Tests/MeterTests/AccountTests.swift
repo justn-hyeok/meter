@@ -11,9 +11,15 @@ import Testing
     // Only key-based providers take names, and names stay short and unambiguous.
     #expect(Account(rawValue: "claude#work") == nil)
     #expect(Account(rawValue: "deepseek#") == nil)
-    #expect(Account(rawValue: "deepseek# padded") == nil)
     #expect(Account(rawValue: "deepseek#" + String(repeating: "x", count: 21)) == nil)
     #expect(Account(rawValue: "nope#work") == nil)
+    // Nothing a shell would split or interpret, since Meter prints commands with the name.
+    for bad in ["my work", "a$b", "a;b", "-x", "🔥", "a\u{1B}[31m"] {
+        #expect(!Account.isValid(name: bad), "\(bad)")
+    }
+    for good in ["work", "회사", "side-2", "a_b.c", "café"] {
+        #expect(Account.isValid(name: good), "\(good)")
+    }
 }
 
 @Test func namedAccountsComeFromTheKeyFileAlone() throws {
@@ -57,10 +63,13 @@ import Testing
 
 @Test func aNamedAccountIsFetchedWithItsOwnProviderAndFiledUnderItsName() async {
     let work = Account(.deepSeek, name: "work")
-    let service = UsageService(
-        providers: [.deepSeek: FixedProvider(used: 10)],
-        named: { $0 == work ? FixedProvider(used: 70) : nil }
-    )
+    let service = UsageService(makeProvider: { account in
+        switch account {
+        case Account(.deepSeek): FixedProvider(used: 10)
+        case work: FixedProvider(used: 70)
+        default: nil
+        }
+    })
     let snapshots = await service.fetch([work, Account(.deepSeek)])
     #expect(snapshots.map(\.accountID) == [work, Account(.deepSeek)])
     #expect(snapshots.map { $0.buckets.first?.used } == [70, 10])
@@ -83,7 +92,7 @@ import Testing
     let work = Account(.openCodeGo, name: "work")
     let store = UsageStore(
         settings: MeterSettings(defaults: defaults),
-        service: UsageService(providers: [:], named: { _ in FixedProvider(used: 40) }),
+        service: UsageService(makeProvider: { $0.name == nil ? nil : FixedProvider(used: 40) }),
         refreshOnEnable: false,
         secrets: secrets
     )
@@ -115,4 +124,57 @@ private struct FixedProvider: UsageProvider {
             fetchedAt: .now, source: "test", state: .live, message: nil
         )
     }
+}
+
+@Test func namedAccountsUseOnlyTheirOwnStoredKey() throws {
+    let secrets = SecretStore.forTests
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "MeterTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let auth = directory.appending(path: "auth.json")
+    try Data(#"{"opencode-go":{"type":"api","key":"cli-key"},"apiKey":"cli-key"}"#.utf8).write(to: auth)
+    let environment = ["OPENCODE_GO_API_KEY": "env-key", "COMMAND_CODE_API_KEY": "env-key", "DEEPSEEK_API_KEY": "env-key"]
+
+    let work = Account(.openCodeGo, name: "work")
+    #expect(OpenCodeGoCredential(store: secrets, environment: environment, cliAuthFile: auth, account: work).apiKey() == nil)
+    #expect(CommandCodeAPIKeyCredential(store: secrets, environment: environment, cliAuthFile: auth, account: Account(.commandCode, name: "work")).apiKey() == nil)
+    #expect(DeepSeekUsageProvider(store: secrets, environment: environment, account: Account(.deepSeek, name: "work")).apiKey() == nil)
+
+    try secrets.setSecret("work-key", for: work)
+    #expect(OpenCodeGoCredential(store: secrets, environment: environment, cliAuthFile: auth, account: work).apiKey() == "work-key")
+
+    // Its missing key points at the command for that account, not at signing in again.
+    #expect(CredentialError.missingKey(for: Account(.commandCode, name: "side"), signInAt: "commandcode.ai").errorDescription
+        == "no key stored; run 'meter set-key command-code --name side'")
+}
+
+@Test func removingAFileThatIsNotThereCreatesNothing() throws {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "MeterTests-\(UUID().uuidString)")
+    let secrets = SecretStore(fileURL: directory.appending(path: "credentials.json"))
+    try secrets.setSecret(nil, for: Account(.deepSeek, name: "work"))
+    #expect(!FileManager.default.fileExists(atPath: directory.path))
+}
+
+@MainActor
+@Test func anAccountAddedMidDragWaitsForTheDragToEnd() async throws {
+    let suite = "AccountTests.drag.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = SecretStore.forTests
+    let store = UsageStore(settings: MeterSettings(defaults: defaults), service: UsageService(providers: [:]), refreshOnEnable: false, secrets: secrets)
+    let before = store.order
+
+    store.isReordering = true
+    store.move(Account(.codex), to: Account(.cursor), persist: false)
+    let dragged = store.order
+    try secrets.setSecret("sk", for: Account(.deepSeek, name: "work"))
+    store.reloadSettings(includingOrder: false)
+    #expect(store.order == dragged)
+
+    // Esc still restores, and the account arrives once the drag is over.
+    store.restoreOrder(before)
+    #expect(store.order == before)
+    store.isReordering = false
+    store.reloadSettings(includingOrder: false)
+    #expect(store.order.last == Account(.deepSeek, name: "work"))
 }

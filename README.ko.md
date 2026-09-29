@@ -39,7 +39,7 @@ Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor
 
 ## 설치
 
-[v0.4.23 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.23)에서 `Meter-0.4.23-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
+[v0.4.24 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.24)에서 `Meter-0.4.24-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
 
 **설치 후 필수:** 릴리즈는 공증되지 않아서, 브라우저가 붙인 격리 속성을 지우기 전까지 macOS가 실행을 막습니다. 앱을 옮긴 뒤 한 번만 실행하세요.
 
@@ -120,7 +120,7 @@ meter set-key deepseek --name work      # set-key처럼 키를 표준 입력으�
 meter clear-key deepseek --name work
 ```
 
-이름 붙인 계정은 "DeepSeek API · work"처럼 제목이 붙은 별도 카드로 표시되며, 체크박스와 순서도 따로 갖습니다. 이름 붙인 계정은 그 계정에 저장된 키만 사용하고, 환경 변수나 제공자 CLI의 로그인은 쓰지 않습니다. 그것들은 기본 계정의 것입니다. CLI에서 제공자 이름은 그 제공자의 모든 계정을 뜻하고, `deepseek#work`처럼 쓰면 한 계정만 고릅니다. 예: `meter deepseek#work`, `meter disable deepseek#work`.
+이름에는 글자(한글 포함), 숫자, `-`, `_`, `.`만 쓸 수 있고 20자까지입니다. 이름 붙인 계정은 "DeepSeek API · work"처럼 제목이 붙은 별도 카드로 표시되며, 체크박스와 순서도 따로 갖습니다. 이름 붙인 계정은 그 계정에 저장된 키만 사용하고, 환경 변수나 제공자 CLI의 로그인은 쓰지 않습니다. 그것들은 기본 계정의 것입니다. CLI에서 제공자 이름은 그 제공자의 모든 계정을 뜻하고, `deepseek#work`처럼 쓰면 한 계정만 고릅니다. 예: `meter deepseek#work`, `meter disable deepseek#work`.
 
 Codex, Claude, Cursor는 이 Mac에서 앱이나 CLI로 로그인한 계정 하나만 지원합니다.
 
@@ -186,9 +186,9 @@ swift run meter disable deepseek
 
 `meter set-key <provider>`는 Meter가 이 맥에서 찾을 수 없는 제공자의 API 키를 stdin에서 읽어 저장하고, `meter clear-key <provider>`는 지웁니다. `meter doctor`는 각 자격 증명의 출처와 존재 여부를 보고합니다. 네트워크 요청을 하지 않고 키체인 프롬프트도 띄우지 않으므로 제공자가 고장난 상태에서도 사용할 수 있습니다. `--strict`와 함께 쓰면 활성화된 제공자에 자격 증명이 없을 때 1을 반환합니다.
 
-기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다. 스키마 3은 필드를 바꾸지 않았고, `snapshots`와 doctor의 `credentials`가 메뉴에서 정한 순서(제공자를 직접 적으면 적은 순서)를 따른다는 표시입니다. 이 순서는 0.4.16~0.4.19에서 이미 스키마 2로 나갔으므로(doctor는 0.4.19만), 항목은 위치가 아니라 `provider`로 읽으세요. 이름 붙인 계정의 항목에는 계정 이름을 담은 `account` 필드가 추가됩니다. 기본 계정의 항목에는 이 필드가 없어 JSON이 그대로지만, 이름 붙인 계정이 있는 제공자는 계정 수만큼 항목이 나옵니다.
+기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다. 스키마 3은 필드를 바꾸지 않았고, `snapshots`와 doctor의 `credentials`가 메뉴에서 정한 순서(제공자를 직접 적으면 적은 순서)를 따른다는 표시입니다. 이 순서는 0.4.16~0.4.19에서 이미 스키마 2로 나갔으므로(doctor는 0.4.19만), 항목은 위치가 아니라 `provider`로 읽으세요. 스키마 4(0.4.24)는 이름 붙인 계정을 표시합니다. 한 제공자가 계정 수만큼 여러 번 나올 수 있고, 이름 붙인 계정의 항목에는 계정 이름을 담은 `account` 필드가 붙습니다. 기본 계정의 항목에는 `account` 필드가 없습니다. 0.4.24은 이미 이 형태를 스키마 3으로 내보냈습니다.
 
-v0.4.23 릴리즈에는 `meter-0.4.23-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
+v0.4.24 릴리즈에는 `meter-0.4.24-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 
 ```sh
 ./Scripts/install-cli.sh

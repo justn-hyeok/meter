@@ -307,7 +307,11 @@ struct DeepSeekUsageProvider: UsageProvider {
 
     func fetch() async -> UsageSnapshot {
         guard let key = apiKey() else {
-            return .unavailable(id, "No API key. Run 'meter set-key deepseek' or paste one in the Meter menu.")
+            // A named account has no key field in the menu, and plain `set-key deepseek`
+            // would set the default account's key instead of this one's.
+            let hint = account.name.map { "Run 'meter set-key deepseek --name \($0)'." }
+                ?? "Run 'meter set-key deepseek' or paste one in the Meter menu."
+            return .unavailable(id, "No API key. \(hint)")
         }
         do {
             var request = URLRequest(url: URL(string: "https://api.deepseek.com/user/balance")!)

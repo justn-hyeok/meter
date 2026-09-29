@@ -64,6 +64,13 @@ public struct DiagnosticEnvironment: Sendable {
     static let liveCodexExecutable: @Sendable () -> URL? = { CodexAppServerBridge.locateExecutable() }
 
     public static let live = DiagnosticEnvironment()
+
+    /// The live machine, with keys read from `secrets`.
+    public func with(secrets: SecretStore) -> Self {
+        var copy = self
+        copy.secrets = secrets
+        return copy
+    }
 }
 
 /// Reports where each provider's credential comes from and whether it is there.

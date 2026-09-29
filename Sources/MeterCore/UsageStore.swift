@@ -68,6 +68,9 @@ public final class UsageStore {
     /// Cached so the menu does not probe the machine from inside a SwiftUI body.
     public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
     public var refreshInterval: TimeInterval = 300
+    /// Set while a card is being dragged. The drag moves cards without saving, so nothing may
+    /// replace the order or the account list under it until the drag ends.
+    public var isReordering = false
 
     /// Identifies the most recently started fetch per provider, so a slow batch cannot
     /// land on top of a newer single refresh that has already answered.
@@ -109,7 +112,7 @@ public final class UsageStore {
         self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
     }
 
-    public func enabled(_ provider: ProviderID) -> Bool {
+    func enabled(_ provider: ProviderID) -> Bool {
         enabled(Account(provider))
     }
 
@@ -117,7 +120,7 @@ public final class UsageStore {
         enabledAccounts.contains(account)
     }
 
-    public func setEnabled(_ enabled: Bool, for provider: ProviderID) {
+    func setEnabled(_ enabled: Bool, for provider: ProviderID) {
         setEnabled(enabled, for: Account(provider))
     }
 
@@ -184,7 +187,7 @@ public final class UsageStore {
         if persist { settings.saveOrder(moved) }
     }
 
-    public func move(_ provider: ProviderID, to target: ProviderID, persist: Bool = true) {
+    func move(_ provider: ProviderID, to target: ProviderID, persist: Bool = true) {
         move(Account(provider), to: Account(target), persist: persist)
     }
 
@@ -194,7 +197,9 @@ public final class UsageStore {
     /// Codex checked and kept polling it, after `meter set-key` the key field stayed up,
     /// and the next drag wrote the launch-time order back over an order saved elsewhere.
     public func reloadSettings(includingOrder: Bool) {
-        let accountsNow = Account.all(in: secrets)
+        // An account added or removed mid-drag waits for the drag to end: taking it up would
+        // replace the order the drag is moving through, and Esc could no longer restore it.
+        let accountsNow = isReordering ? accounts : Account.all(in: secrets)
         let accountsChanged = accountsNow != accounts
         if accountsChanged { accounts = accountsNow }
         let enabledNow = Set(settings.enabledAccounts(accountsNow))
@@ -210,7 +215,7 @@ public final class UsageStore {
         if status != credentialStatus { credentialStatus = status }
         // A new or removed account changes which cards exist, so it is taken up even when
         // the order otherwise waits for the menu to open.
-        if includingOrder || accountsChanged {
+        if (includingOrder && !isReordering) || accountsChanged {
             let saved = settings.order(of: accountsNow)
             if saved != order { order = saved }
         }
@@ -279,7 +284,7 @@ public final class UsageStore {
         merge(snapshot, token: token)
     }
 
-    public func refresh(_ provider: ProviderID, interactive: Bool = false) async {
+    func refresh(_ provider: ProviderID, interactive: Bool = false) async {
         await refresh(Account(provider), interactive: interactive)
     }
 
@@ -290,10 +295,18 @@ public final class UsageStore {
         // cards without saving, and reloading in the middle of one would undo its moves.
         reloadSettings(includingOrder: true)
         let stale = order.filter { enabled($0) && snapshots[$0]?.state != .live }
-        guard !stale.isEmpty else { return }
-        for account in stale {
+        // Default accounts one at a time, since each may raise a keychain dialog and two at
+        // once would stack them. Named accounts read only the key file and never ask, so they
+        // go together, alongside: in turn, offline, each waited out its own timeout.
+        async let named: Void = withTaskGroup(of: Void.self) { group in
+            for account in stale where account.name != nil {
+                group.addTask { await self.refresh(account, interactive: false) }
+            }
+        }
+        for account in stale where account.name == nil {
             await refresh(account, interactive: true)
         }
+        await named
     }
 
     private func beginFetch(_ account: Account) -> Int {

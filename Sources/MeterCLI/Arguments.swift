@@ -52,6 +52,7 @@ enum CLIArgumentError: LocalizedError, Equatable {
     case invalidAccountName(String)
     case missingAccountName
     case nameOnlyForKeys
+    case conflictingAccountName(Account, String)
 
     var errorDescription: String? {
         switch self {
@@ -70,11 +71,13 @@ enum CLIArgumentError: LocalizedError, Equatable {
         case .providerTakesNoNamedAccounts(let provider):
             "\(provider.title) has one account, the one signed in on this Mac. Named accounts are for DeepSeek, Command Code and OpenCode Go"
         case .invalidAccountName(let name):
-            "Invalid account name '\(name)': use up to 20 characters, without '#' or surrounding spaces"
+            "Invalid account name '\(name)': use up to 20 letters, digits, '-', '_' or '.', not starting with '-'"
         case .missingAccountName:
             "--name needs a value"
         case .nameOnlyForKeys:
             "--name is only valid for set-key and clear-key"
+        case .conflictingAccountName(let account, let name):
+            "\(account.rawValue) already names an account; drop --name \(name), or write \(account.provider.rawValue) --name \(name)"
         case .statusOnlyOption:
             "The --json and --strict options are only valid for status and doctor queries"
         }
@@ -129,7 +132,11 @@ enum CLIArgumentParser {
             }
             let account: Account
             switch targets[0] {
-            case .account(let named): account = named
+            case .account(let named):
+                // Silently preferring one of the two overwrote the key of an account the
+                // user did not mean.
+                if let name { throw CLIArgumentError.conflictingAccountName(named, name) }
+                account = named
             case .provider(let provider):
                 guard provider.acceptsStoredKey else { throw CLIArgumentError.providerTakesNoKey(provider) }
                 if let name {

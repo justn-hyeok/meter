@@ -12,18 +12,20 @@ struct CLIResult {
 }
 
 struct MeterCLIApplication {
-    static let version = "0.4.23"
+    static let version = "0.4.24"
 
     let service: UsageService
     let settings: MeterSettings
     let secrets: SecretStore
 
+    /// Without a service, one is made reading from `secrets`, so the accounts listed and the
+    /// keys used to query them come from the same file.
     init(
-        service: UsageService = UsageService(),
+        service: UsageService? = nil,
         settings: MeterSettings = MeterSettings(),
         secrets: SecretStore = .default
     ) {
-        self.service = service
+        self.service = service ?? UsageService(secrets: secrets)
         self.settings = settings
         self.secrets = secrets
         settings.migrateIfNeeded()
@@ -118,8 +120,17 @@ struct MeterCLIApplication {
     }
 
     private func clearKey(for account: Account) -> CLIResult {
+        // A mistyped name used to report success while the intended account kept its key.
+        if account.name != nil, secrets.secret(for: account) == nil {
+            return .init(
+                standardOutput: "",
+                standardError: "No account \(account.rawValue). Accounts: \(accounts.filter { $0.provider == account.provider }.map(\.rawValue).joined(separator: ", "))",
+                exitCode: 64
+            )
+        }
         do {
             try secrets.setSecret(nil, for: account)
+            settings.forget(account)
             let removed = account.name == nil ? "the stored key for \(account.rawValue)" : "account \(account.rawValue)"
             return .init(standardOutput: "Removed \(removed)", standardError: "", exitCode: 0)
         } catch {
@@ -161,7 +172,7 @@ struct MeterCLIApplication {
 
     private func doctor(json: Bool, strict: Bool) -> CLIResult {
         let accounts = accounts
-        let statuses = accounts.map { CredentialDoctor.diagnose($0) }
+        let statuses = accounts.map { CredentialDoctor.diagnose($0, in: .live.with(secrets: secrets)) }
         let enabled = Set(accounts.filter(settings.enabled))
         let blocked = statuses.filter { enabled.contains($0.accountID) && !$0.isUsable }
         let exitCode: Int32 = strict && !blocked.isEmpty ? 1 : 0

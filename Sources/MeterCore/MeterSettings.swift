@@ -9,7 +9,7 @@ public struct MeterSettings {
         self.defaults = defaults
     }
 
-    public func enabled(_ provider: ProviderID) -> Bool {
+    func enabled(_ provider: ProviderID) -> Bool {
         enabled(Account(provider))
     }
 
@@ -22,7 +22,7 @@ public struct MeterSettings {
         return account.name == nil ? Self.defaultEnabled(account.provider) : true
     }
 
-    public func enabledProviders() -> [ProviderID] {
+    func enabledProviders() -> [ProviderID] {
         providerOrder.filter(enabled)
     }
 
@@ -54,10 +54,9 @@ public struct MeterSettings {
     public func saveOrder(_ order: [Account]) {
         var names: [String] = []
         for name in order.map(\.rawValue) where !names.contains(name) { names.append(name) }
-        let mentioned = Set(names)
         var previous: String?
         for name in defaults.stringArray(forKey: Self.orderKey) ?? [] {
-            if !mentioned.contains(name), !names.contains(name) {
+            if !names.contains(name) {
                 let index = previous.flatMap { names.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
                 names.insert(name, at: index)
             }
@@ -66,18 +65,26 @@ public struct MeterSettings {
         defaults.set(names, forKey: Self.orderKey)
     }
 
-    /// The default accounts alone, for callers with no named accounts in view.
-    public var providerOrder: [ProviderID] {
+    /// The default accounts alone. Internal: code that picked this up would leave named
+    /// accounts out without noticing.
+    var providerOrder: [ProviderID] {
         get { order(of: ProviderID.allCases.map { Account($0) }).map(\.provider) }
         nonmutating set { saveOrder(newValue.map { Account($0) }) }
     }
 
-    public func setEnabled(_ enabled: Bool, for provider: ProviderID) {
+    func setEnabled(_ enabled: Bool, for provider: ProviderID) {
         setEnabled(enabled, for: Account(provider))
     }
 
     public func setEnabled(_ enabled: Bool, for account: Account) {
         defaults.set(enabled, forKey: key(for: account))
+    }
+
+    /// Drops a removed account's switch, so adding it again brings it back on, as a new
+    /// account is. Left behind, a re-added account came back switched off with no word why.
+    public func forget(_ account: Account) {
+        guard account.name != nil else { return }
+        defaults.removeObject(forKey: key(for: account))
     }
 
     /// On a new install, everything but Cursor, which is the only provider needing

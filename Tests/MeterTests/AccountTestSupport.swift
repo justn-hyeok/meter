@@ -27,3 +27,9 @@ extension UsageStore {
         restoreOrder(providers.map { Account($0) })
     }
 }
+
+extension UsageService {
+    func fetch(_ providers: [ProviderID]) async -> [UsageSnapshot] {
+        await fetch(providers.map { Account($0) })
+    }
+}

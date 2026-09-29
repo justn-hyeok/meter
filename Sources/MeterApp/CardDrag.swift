@@ -26,6 +26,7 @@ final class CardDrag {
     func begin(_ account: Account, atY y: CGFloat, store: UsageStore) {
         guard let card = frames[account] else { return }
         self.account = account
+        store.isReordering = true
         orderBefore = store.order
         grabOffset = y - card.minY
         liftedFrame = card
@@ -58,6 +59,7 @@ final class CardDrag {
     /// menu - puts back the order from before the drag.
     func finish(store: UsageStore, commit: Bool, animation: Animation?) {
         guard account != nil else { return }
+        store.isReordering = false
         if commit {
             store.saveOrder()
         } else {

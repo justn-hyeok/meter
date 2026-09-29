@@ -55,6 +55,8 @@ public struct SecretStore: Sendable {
     }
 
     public func setSecret(_ value: String?, for account: Account) throws {
+        // Removing from a file that is not there has nothing to do, and must not create it.
+        if value == nil, !FileManager.default.fileExists(atPath: fileURL.path) { return }
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true,

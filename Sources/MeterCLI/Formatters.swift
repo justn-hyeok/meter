@@ -49,7 +49,9 @@ enum CLITextFormatter {
         let ordered = settings.order(of: accounts)
         let width = max(12, ordered.map(\.rawValue.count).max() ?? 0)
         return ordered.map { account in
-            "\(settings.enabled(account) ? "enabled " : "disabled")  \(account.rawValue.padding(toLength: width, withPad: " ", startingAt: 0)) \(account.title)"
+            // Padded by characters: `String.padding` counts UTF-16 units, and cut a name with
+            // an emoji or a decomposed accent in half.
+            "\(settings.enabled(account) ? "enabled " : "disabled")  \(padded(account.rawValue, to: width)) \(account.title)"
         }.joined(separator: "\n")
     }
 
@@ -145,7 +147,9 @@ private struct CLIJSONEnvelope: Encodable {
     // 2: Cursor's spend bucket id changed from "on-demand" to "spend".
     // 3: no field changed. Marks that snapshots follow the order arranged in the menu, or
     //    the order typed; that ordering first shipped in 0.4.16 while this still said 2.
-    let schemaVersion = 3
+    // 4: a provider can appear once per account, and a named account's entry carries
+    //    `account`. 0.4.23 shipped both under 3.
+    let schemaVersion = 4
     let generatedAt: Date
     let snapshots: [UsageSnapshot]
 }
@@ -154,7 +158,8 @@ private struct CLIDoctorEnvelope: Encodable {
     // 2: availability gained "blocked".
     // 3: no field changed. Marks that credentials follow the order arranged in the menu;
     //    that ordering first shipped in 0.4.19 while this still said 2.
-    let schemaVersion = 3
+    // 4: a provider can appear once per account, with `account` on named ones.
+    let schemaVersion = 4
     let generatedAt: Date
     let credentials: [CredentialStatus]
 }

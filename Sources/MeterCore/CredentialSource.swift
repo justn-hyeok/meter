@@ -19,11 +19,20 @@ extension CredentialSource {
 
 public enum CredentialError: LocalizedError, Equatable {
     case signInRequired(String)
+    /// A named account whose key is gone. Signing in again would fix the default account,
+    /// not this one.
+    case noStoredKey(Account)
 
     public var errorDescription: String? {
         switch self {
         case .signInRequired(let host): "sign in again at \(host)"
+        case .noStoredKey(let account):
+            "no key stored; run 'meter set-key \(account.provider.rawValue) --name \(account.name ?? "")'"
         }
+    }
+
+    static func missingKey(for account: Account, signInAt host: String) -> Self {
+        account.name == nil ? .signInRequired(host) : .noStoredKey(account)
     }
 }
 
@@ -113,26 +122,6 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
     }
 }
 
-/// A named account's key, as stored with `meter set-key <provider> --name <name>`.
-public struct StoredKeyCredential: CredentialSource {
-    private let store: SecretStore
-    private let account: Account
-    private let signInAt: String
-
-    public init(account: Account, signInAt: String, store: SecretStore = .default) {
-        self.account = account
-        self.signInAt = signInAt
-        self.store = store
-    }
-
-    public var sourceDescription: String { "stored key for \(account.rawValue)" }
-
-    public func authHeaders() throws -> [String: String] {
-        guard let key = store.secret(for: account) else { throw CredentialError.signInRequired(signInAt) }
-        return ["Authorization": "Bearer \(key)"]
-    }
-}
-
 /// OpenCode keeps the OpenCode Go key it was connected with in its own auth file, under
 /// `opencode-go`, and the usage route the OpenCode console reads accepts that key.
 public struct OpenCodeGoCredential: CredentialSource {
@@ -143,23 +132,28 @@ public struct OpenCodeGoCredential: CredentialSource {
     private let store: SecretStore
     private let environment: [String: String]
     private let cliAuthFile: URL
+    private let account: Account
 
     public init(
         store: SecretStore = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        cliAuthFile: URL = OpenCodeGoCredential.cliAuthFile
+        cliAuthFile: URL = OpenCodeGoCredential.cliAuthFile,
+        account: Account = Account(.openCodeGo)
     ) {
         self.store = store
         self.environment = environment
         self.cliAuthFile = cliAuthFile
+        self.account = account
     }
 
     public var sourceDescription: String { "OpenCode Go API key" }
 
-    /// An environment variable, then a key handed to Meter, then OpenCode's own login.
+    /// An environment variable, then a key handed to Meter, then OpenCode's own login. A
+    /// named account has only its stored key: the others belong to the default account.
     public func apiKey() -> String? {
+        guard account.name == nil else { return store.secret(for: account) }
         if let key = environment[Self.environmentKey], !key.isEmpty { return key }
-        if let key = store.secret(for: .openCodeGo) { return key }
+        if let key = store.secret(for: account) { return key }
         return cliKey()
     }
 
@@ -177,7 +171,7 @@ public struct OpenCodeGoCredential: CredentialSource {
     }
 
     public func authHeaders() throws -> [String: String] {
-        guard let key = apiKey() else { throw CredentialError.signInRequired("opencode.ai") }
+        guard let key = apiKey() else { throw CredentialError.missingKey(for: account, signInAt: "opencode.ai") }
         return ["Authorization": "Bearer \(key)"]
     }
 }
@@ -191,24 +185,29 @@ public struct CommandCodeAPIKeyCredential: CredentialSource {
     private let store: SecretStore
     private let environment: [String: String]
     private let cliAuthFile: URL
+    private let account: Account
 
     public init(
         store: SecretStore = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        cliAuthFile: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".commandcode/auth.json")
+        cliAuthFile: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".commandcode/auth.json"),
+        account: Account = Account(.commandCode)
     ) {
         self.store = store
         self.environment = environment
         self.cliAuthFile = cliAuthFile
+        self.account = account
     }
 
     public var sourceDescription: String { "Command Code API key" }
 
     /// Explicit beats discovered: an environment variable, then a key the user handed to
-    /// Meter, then whatever the Command Code CLI already logged in with.
+    /// Meter, then whatever the Command Code CLI already logged in with. A named account has
+    /// only its stored key: the others belong to the default account.
     public func apiKey() -> String? {
+        guard account.name == nil else { return store.secret(for: account) }
         if let key = environment[Self.environmentKey], !key.isEmpty { return key }
-        if let key = store.secret(for: .commandCode) { return key }
+        if let key = store.secret(for: account) { return key }
         guard let data = try? Data(contentsOf: cliAuthFile),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let key = root["apiKey"] as? String,
@@ -219,7 +218,7 @@ public struct CommandCodeAPIKeyCredential: CredentialSource {
     }
 
     public func authHeaders() throws -> [String: String] {
-        guard let key = apiKey() else { throw CredentialError.signInRequired("commandcode.ai") }
+        guard let key = apiKey() else { throw CredentialError.missingKey(for: account, signInAt: "commandcode.ai") }
         return ["Authorization": "Bearer \(key)"]
     }
 }

@@ -40,7 +40,7 @@ import Testing
     )
 
     let output = try CLIJSONFormatter.status([snapshot], now: now)
-    #expect(output.contains(#""schemaVersion" : 3"#))
+    #expect(output.contains(#""schemaVersion" : 4"#))
     #expect(output.contains(#""provider" : "codex""#))
     #expect(output.contains("2023-11-14T22:13:20Z"))
 }
@@ -233,6 +233,9 @@ private struct StubProvider: UsageProvider {
     #expect(throws: CLIArgumentError.nameOnlyForKeys) {
         try CLIArgumentParser.parse(["deepseek", "--name", "work"])
     }
+    #expect(throws: CLIArgumentError.conflictingAccountName(Account(.deepSeek, name: "work"), "home")) {
+        try CLIArgumentParser.parse(["set-key", "deepseek#work", "--name", "home"])
+    }
 }
 
 @Test func aFourthAccountIsRefusedBeforeAnyKeyIsRead() async throws {
@@ -261,4 +264,36 @@ private struct StubProvider: UsageProvider {
 
     let lines = CLITextFormatter.providers(settings: settings, accounts: accounts).split(separator: "\n")
     #expect(lines.last == "enabled   deepseek#work DeepSeek API · work")
+}
+
+@Test func clearingANamedAccountForgetsItsSwitchAndATypoFails() async throws {
+    let secrets = SecretStore.forTests
+    let work = Account(.deepSeek, name: "work")
+    try secrets.setSecret("sk", for: work)
+    let suite = "MeterCLITests.clear.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let settings = MeterSettings(defaults: defaults)
+    settings.setEnabled(false, for: work)
+    let app = MeterCLIApplication(service: UsageService(providers: [:]), settings: settings, secrets: secrets)
+
+    let typo = await app.run(.init(command: .clearKey(Account(.deepSeek, name: "wrok")), json: false, strict: false))
+    #expect(typo.exitCode == 64)
+    #expect(secrets.secret(for: work) == "sk")
+
+    let removed = await app.run(.init(command: .clearKey(work), json: false, strict: false))
+    #expect(removed.exitCode == 0)
+    #expect(secrets.secret(for: work) == nil)
+    // Added again later, it is on, like any new account.
+    #expect(settings.enabled(work))
+}
+
+@Test func providersPadsNamesByCharacter() throws {
+    let suite = "MeterCLITests.pad.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let accounts = [Account(.codex), Account(.deepSeek, name: "café")]
+    let lines = CLITextFormatter.providers(settings: MeterSettings(defaults: defaults), accounts: accounts).split(separator: "\n")
+    #expect(lines[1] == "enabled   deepseek#café DeepSeek API · café")
+    #expect(lines[0] == "enabled   codex         Codex")
 }

@@ -29,11 +29,11 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
 }
 
 extension ProviderID {
+    var sortIndex: Int { Self.allCases.firstIndex(of: self) ?? 0 }
+
     /// Providers that can hold more than one account. Only those Meter is handed an API key
     /// for: the rest belong to an app or CLI that is signed in to one account at a time, and
     /// Meter reads that login rather than keeping one of its own.
-    var sortIndex: Int { Self.allCases.firstIndex(of: self) ?? 0 }
-
     public var acceptsNamedAccounts: Bool {
         self == .deepSeek || self == .commandCode || self == .openCodeGo
     }
@@ -73,12 +73,15 @@ public struct Account: Hashable, Sendable, Identifiable, CustomStringConvertible
     /// The default account and two named ones.
     public static let limitPerProvider = 3
 
-    /// Short enough for a card title, and free of the separator and of anything that would
-    /// need quoting in a shell.
+    /// Letters, digits, `-`, `_` and `.`, up to 20 characters, not starting with `-`.
+    ///
+    /// Letters in any script, so `회사` works. Nothing that needs quoting in a shell: Meter
+    /// prints commands with the name in them to be copied, and `deepseek#name` has to stay
+    /// one argument. A space, `$` or `;` used to pass, and the printed commands then failed
+    /// when pasted; a control character went straight into the terminal.
     public static func isValid(name: String) -> Bool {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        return !trimmed.isEmpty && trimmed == name && name.count <= 20
-            && !name.contains("#") && !name.contains(where: \.isNewline)
+        guard !name.isEmpty, name.count <= 20, name.first != "-" else { return false }
+        return name.allSatisfy { $0.isLetter || $0.isNumber || "-_.".contains($0) }
     }
 
     /// Every account on this machine: each provider's default, then the named accounts in
