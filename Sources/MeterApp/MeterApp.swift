@@ -5,6 +5,7 @@ import MeterCore
 @main
 struct MeterApp: App {
     @State private var store = UsageStore()
+    @State private var hotKey: GlobalHotKey?
 
     var body: some Scene {
         MenuBarExtra {
@@ -16,6 +17,7 @@ struct MeterApp: App {
             // the battery's own, which reads as no Meter at all.
             Label("Meter", systemImage: icon)
                 .task {
+                    if hotKey == nil { hotKey = .openMenu { MenuBarToggle.toggle() } }
                     store.start()
                 }
         }
