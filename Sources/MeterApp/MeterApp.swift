@@ -168,7 +168,9 @@ private struct ProviderCard: View {
             VStack(alignment: .leading, spacing: 5) {
                 header
                 if let snapshot = store.snapshots[provider], !snapshot.buckets.isEmpty {
-                    ForEach(snapshot.buckets) { UsageRow(bucket: $0) }
+                    ForEach(snapshot.buckets) { bucket in
+                        UsageRow(bucket: bucket, isTightest: store.tightestLimit == BucketKey(provider: provider, bucketID: bucket.id))
+                    }
                 } else {
                     Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
                         .font(.caption).foregroundStyle(.secondary)
@@ -206,11 +208,15 @@ private struct ProviderCard: View {
 /// comparison a row of vertical columns would have given, except the labels survive.
 private struct UsageRow: View {
     let bucket: UsageBucket
+    /// The one window worth acting on, if any. Weight rather than colour: blue and orange
+    /// are already carrying spent-versus-left, and a third meaning on the same hues would
+    /// undo that.
+    var isTightest = false
 
     var body: some View {
         HStack(spacing: 8) {
             Text(bucket.label)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isTightest ? .primary : .secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: 112, alignment: .leading)
@@ -219,6 +225,7 @@ private struct UsageRow: View {
 
             Text(UsageFormat.value(bucket))
                 .monospacedDigit()
+                .fontWeight(isTightest ? .semibold : .regular)
                 .frame(width: 46, alignment: .trailing)
 
             Text(UsageFormat.reset(bucket) ?? "—")

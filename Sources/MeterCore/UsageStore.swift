@@ -1,6 +1,17 @@
 import Foundation
 import Observation
 
+/// Identifies one window across the whole menu.
+public struct BucketKey: Hashable, Sendable {
+    public let provider: ProviderID
+    public let bucketID: String
+
+    public init(provider: ProviderID, bucketID: String) {
+        self.provider = provider
+        self.bucketID = bucketID
+    }
+}
+
 /// Menu bar state: which providers are on, their latest snapshots, and the value that
 /// drives the gauge.
 ///
@@ -150,6 +161,11 @@ public final class UsageStore {
         Task { await refresh(provider) }
     }
 
+    /// Test seam: the emphasis rule is worth pinning without standing up a fake provider.
+    func replaceSnapshotForTesting(_ snapshot: UsageSnapshot) {
+        snapshots[snapshot.provider] = snapshot
+    }
+
     private static func providersWithStoredKeys(_ secrets: SecretStore) -> Set<ProviderID> {
         Set(ProviderID.allCases.filter { $0.acceptsStoredKey && secrets.hasSecret(for: $0) })
     }
@@ -192,6 +208,28 @@ public final class UsageStore {
     /// Every enabled provider answered and none produced data. `highestUsage` is nil for
     /// this and for "nothing enabled" alike, and the menu drew both as a zero-percent
     /// needle - a total credential failure looked like a healthy, idle account.
+    /// The window closest to its limit, but only once something is close enough for that
+    /// to matter. Emphasising a row while everything sits at 5% would be noise, so below the
+    /// threshold the answer is "nothing is urgent" rather than "this one is least fine".
+    public var tightestLimit: BucketKey? {
+        var tightest: (key: BucketKey, fraction: Double)?
+        for provider in ProviderID.allCases {
+            guard let snapshot = snapshots[provider] else { continue }
+            for bucket in snapshot.buckets {
+                guard let fraction = bucket.fractionUsed,
+                      fraction >= Self.urgentFraction else { continue }
+                if tightest == nil || fraction > tightest!.fraction {
+                    tightest = (BucketKey(provider: provider, bucketID: bucket.id), fraction)
+                }
+            }
+        }
+        return tightest?.key
+    }
+
+    /// The same line the first notification threshold draws, so the menu and the
+    /// notifications agree about what counts as worth noticing.
+    static let urgentFraction = Double(UsageAlertTracker.defaultThresholds[0]) / 100
+
     public var isAllUnavailable: Bool {
         !enabledProviders.isEmpty && enabledProviders.allSatisfy { snapshots[$0]?.buckets.isEmpty ?? false }
     }
