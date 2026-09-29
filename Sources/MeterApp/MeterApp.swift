@@ -232,8 +232,13 @@ private struct UsageColumn: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            Text(UsageFormat.value(bucket))
-                .font(.caption2.monospacedDigit())
+            HStack(spacing: 3) {
+                Text(UsageFormat.value(bucket))
+                if let reset = UsageFormat.reset(bucket) {
+                    Text(reset).foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption2.monospacedDigit())
             column
             Text(bucket.label)
                 .font(.caption2)
@@ -277,6 +282,9 @@ private struct UsageLine: View {
             Text(bucket.label).font(.caption).foregroundStyle(.secondary)
             Spacer()
             Text(UsageFormat.value(bucket)).font(.caption.monospacedDigit())
+            if let reset = UsageFormat.reset(bucket) {
+                Text(reset).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -315,24 +323,3 @@ enum MeterPalette {
     }
 }
 
-enum UsageFormat {
-    static func value(_ bucket: UsageBucket) -> String {
-        if let percentage = bucket.percentageUsed { return String(format: "%.0f%%", percentage) }
-        if bucket.unit == .usd {
-            if let remaining = bucket.remaining { return String(format: "$%.2f left", remaining) }
-            if let used = bucket.used, let limit = bucket.limit {
-                return String(format: "$%.2f / $%.2f", used, limit)
-            }
-            if let used = bucket.used { return String(format: "$%.2f", used) }
-        }
-        if let remaining = bucket.remaining { return "\(String(format: "%.2f", remaining)) \(bucket.unit.rawValue)" }
-        if let used = bucket.used { return "\(String(format: "%.2f", used)) \(bucket.unit.rawValue) used" }
-        return "—"
-    }
-
-    /// The tooltip carries what the column cannot: the full label and when it resets.
-    static func detail(_ bucket: UsageBucket) -> String {
-        guard let resetAt = bucket.resetAt else { return bucket.label }
-        return "\(bucket.label) · resets \(resetAt.formatted(.relative(presentation: .named)))"
-    }
-}
