@@ -37,7 +37,7 @@ private struct MeterMenu: View {
                 Text("Meter").font(.headline)
                 Spacer()
                 if store.isRefreshing { ProgressView().controlSize(.small) }
-                Button { Task { await store.refreshAll() } } label: { Image(systemName: "arrow.clockwise") }
+                Button { Task { await store.refreshAll(interactive: true) } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain)
             }
             .padding(14)
@@ -63,6 +63,9 @@ private struct MeterMenu: View {
         }
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
+        // Opening the menu is the moment a keychain dialog is welcome; the five-minute
+        // refresh never raises one.
+        .task { await store.menuOpened() }
     }
 }
 

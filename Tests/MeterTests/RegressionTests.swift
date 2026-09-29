@@ -349,3 +349,21 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
         #expect(!store.needsKey(.commandCode))
     }
 }
+
+@Test func backgroundReadsAreNotAllowedToRaiseAKeychainDialog() async {
+    // The default has to be non-interactive: the five-minute refresh runs whatever the user
+    // happens to be doing, and Claude Code rotating its session makes macOS want a dialog
+    // roughly three times a day.
+    #expect(Keychain.allowInteraction == false)
+
+    await Keychain.$allowInteraction.withValue(true) {
+        #expect(Keychain.allowInteraction)
+        // The value has to survive into the child tasks the provider fan-out creates.
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask { Keychain.allowInteraction }
+            for await inherited in group { #expect(inherited) }
+        }
+    }
+
+    #expect(Keychain.allowInteraction == false)
+}

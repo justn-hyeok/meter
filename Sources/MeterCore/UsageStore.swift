@@ -94,14 +94,18 @@ public final class UsageStore {
         }
     }
 
-    public func refreshAll() async {
+    /// `interactive` is true only when the user is looking: opening the menu or pressing
+    /// Refresh. A background refresh never raises a keychain dialog.
+    public func refreshAll(interactive: Bool = false) async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
         let selected = ProviderID.allCases.filter(enabled)
         let tokens = Dictionary(uniqueKeysWithValues: selected.map { ($0, beginFetch($0)) })
-        let results = await service.fetch(selected)
+        let results = await Keychain.$allowInteraction.withValue(interactive) {
+            await service.fetch(selected)
+        }
         for snapshot in results { merge(snapshot, token: tokens[snapshot.provider]) }
 
         // A refresh that produced nothing usable must not advertise itself as the last
@@ -150,11 +154,24 @@ public final class UsageStore {
         Set(ProviderID.allCases.filter { $0.acceptsStoredKey && secrets.hasSecret(for: $0) })
     }
 
-    public func refresh(_ provider: ProviderID) async {
+    public func refresh(_ provider: ProviderID, interactive: Bool = false) async {
         guard enabled(provider) else { return }
         let token = beginFetch(provider)
-        merge(await service.fetch(provider), token: token)
+        let snapshot = await Keychain.$allowInteraction.withValue(interactive) {
+            await service.fetch(provider)
+        }
+        merge(snapshot, token: token)
         announceAlerts()
+    }
+
+    /// Called when the menu opens. Retries anything the background refresh could not read
+    /// without a dialog, which is where the keychain prompt now appears.
+    public func menuOpened() async {
+        let stale = ProviderID.allCases.filter { enabled($0) && snapshots[$0]?.state != .live }
+        guard !stale.isEmpty else { return }
+        for provider in stale {
+            await refresh(provider, interactive: true)
+        }
     }
 
     private func beginFetch(_ provider: ProviderID) -> Int {

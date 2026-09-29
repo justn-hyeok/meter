@@ -58,6 +58,16 @@ final class SecretCache: @unchecked Sendable {
 }
 
 public enum Keychain {
+    /// Whether a read may put a permission dialog on screen.
+    ///
+    /// Claude Code rewrites its keychain item every few hours when it refreshes the session,
+    /// and the rewrite discards the permission macOS recorded for Meter. Nothing here can
+    /// prevent that, so the five-minute refresh stops asking: a background read that would
+    /// need a dialog fails as `blocked` and the provider keeps its last figures, and the
+    /// dialog is raised only when the user opens the menu or presses Refresh - a moment they
+    /// chose, rather than an interruption in the middle of something else.
+    @TaskLocal public static var allowInteraction = false
+
     /// Drops the cached copy so the next read goes back to the keychain. Called when a
     /// service rejects the credential, which is how a rotated token is picked up.
     public static func forget(service: String) {
@@ -121,6 +131,10 @@ public enum Keychain {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         query[(returnData ? kSecReturnData : kSecReturnAttributes) as String] = true
+        if returnData, !allowInteraction {
+            // Fail instead of drawing a dialog the user did not ask for.
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        }
         return query as CFDictionary
     }
 }
