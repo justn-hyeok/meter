@@ -32,7 +32,7 @@ echo "==> artifacts"
 
 echo "==> publish"
 git add -A Sources Resources README.md README.ko.md Scripts
-git commit -q -m "Release Meter $version" -m "Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+git commit -q -m "Release Meter $version" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git tag -a "v$version" -m "Meter $version"
 git push -q origin HEAD
 git push -q origin "v$version"

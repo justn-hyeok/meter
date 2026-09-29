@@ -120,6 +120,9 @@ private struct SettingsRows: View {
         .toggleStyle(.checkbox)
         .controlSize(.small)
         .font(.callout)
+        // Pinned to the leading edge like the legend and the footer; left to itself the
+        // stack sized to its content and sat centred in the panel.
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .task { notifier.refreshPermission() }
@@ -237,7 +240,7 @@ private struct UsageRow: View {
                 .foregroundStyle(isTightest ? .primary : .secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(width: 110, alignment: .leading)
+                .frame(width: 128, alignment: .leading)
 
             UsageBar(fraction: bucket.fractionUsed)
 
@@ -246,7 +249,7 @@ private struct UsageRow: View {
                 .fontWeight(isTightest ? .semibold : .regular)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
-                .frame(width: 88, alignment: .trailing)
+                .frame(width: 70, alignment: .trailing)
 
             Text(UsageFormat.reset(bucket) ?? "—")
                 .monospacedDigit()
