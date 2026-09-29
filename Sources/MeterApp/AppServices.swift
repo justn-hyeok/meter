@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import MeterCore
 import ServiceManagement
@@ -28,11 +29,56 @@ enum LoginItem {
     }
 }
 
+/// What macOS will actually do with a notification Meter posts.
+enum NotificationPermission: Equatable {
+    case allowed
+    /// Turned off in System Settings, so posting is silently discarded.
+    case denied
+    /// Not asked yet, or asked and dismissed.
+    case notAsked
+    /// No app bundle, so notifications are not available at all.
+    case unavailable
+
+    var blocksDelivery: Bool { self == .denied || self == .notAsked }
+}
+
 @MainActor
-enum Notifier {
-    static func requestAuthorization() {
+@Observable
+final class Notifier {
+    static let shared = Notifier()
+
+    /// Read from macOS rather than assumed. The menu's own toggle said notifications were on
+    /// while System Settings was discarding every one of them, which is the kind of thing
+    /// this app is supposed to stop doing.
+    private(set) var permission: NotificationPermission = AppBundle.isBundled ? .notAsked : .unavailable
+
+    func requestAuthorization() {
         guard AppBundle.isBundled else { return }
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { [weak self] _, _ in
+            Task { @MainActor in self?.refreshPermission() }
+        }
+    }
+
+    func refreshPermission() {
+        guard AppBundle.isBundled else { return }
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            let status = settings.authorizationStatus
+            Task { @MainActor in
+                self?.permission = switch status {
+                case .authorized, .provisional, .ephemeral: .allowed
+                case .denied: .denied
+                default: .notAsked
+                }
+            }
+        }
+    }
+
+    func openSystemSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+    }
+
+    static func requestAuthorization() {
+        shared.requestAuthorization()
     }
 
     static func post(_ alerts: [UsageAlert]) {
