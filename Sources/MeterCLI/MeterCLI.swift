@@ -12,7 +12,7 @@ struct CLIResult {
 }
 
 struct MeterCLIApplication {
-    static let version = "0.4.22"
+    static let version = "0.4.23"
 
     let service: UsageService
     let settings: MeterSettings
@@ -36,15 +36,15 @@ struct MeterCLIApplication {
         case .version:
             return .init(standardOutput: "meter \(Self.version)", standardError: "", exitCode: 0)
         case .providers:
-            return .init(standardOutput: CLITextFormatter.providers(settings: settings), standardError: "", exitCode: 0)
-        case .enable(let providers):
-            return update(providers, enabled: true)
-        case .disable(let providers):
-            return update(providers, enabled: false)
-        case .setKey(let provider):
-            return setKey(for: provider)
-        case .clearKey(let provider):
-            return clearKey(for: provider)
+            return .init(standardOutput: CLITextFormatter.providers(settings: settings, accounts: Account.all(in: secrets)), standardError: "", exitCode: 0)
+        case .enable(let targets):
+            return update(targets, enabled: true)
+        case .disable(let targets):
+            return update(targets, enabled: false)
+        case .setKey(let account):
+            return setKey(for: account)
+        case .clearKey(let account):
+            return clearKey(for: account)
         case .doctor:
             return doctor(json: options.json, strict: options.strict)
         case .status(let selection):
@@ -52,30 +52,76 @@ struct MeterCLIApplication {
         }
     }
 
-    private func update(_ providers: [ProviderID], enabled: Bool) -> CLIResult {
-        for provider in providers { settings.setEnabled(enabled, for: provider) }
+    /// Every account on this machine, in the arranged order.
+    private var accounts: [Account] { settings.order(of: Account.all(in: secrets)) }
+
+    /// A provider name stands for all of its accounts; `provider#name` for that one only.
+    private func resolve(_ targets: [AccountTarget]) -> Resolution {
+        let known = accounts
+        var resolved: [Account] = []
+        for target in targets {
+            switch target {
+            case .provider(let provider):
+                resolved += known.filter { $0.provider == provider && !resolved.contains($0) }
+            case .account(let account):
+                guard known.contains(account) else {
+                    return .failure(CLIResult(
+                        standardOutput: "",
+                        standardError: "No account \(account.rawValue). Add it with 'meter set-key \(account.provider.rawValue) --name \(account.name ?? "")'.",
+                        exitCode: 64
+                    ))
+                }
+                if !resolved.contains(account) { resolved.append(account) }
+            }
+        }
+        return .accounts(resolved)
+    }
+
+    private enum Resolution {
+        case accounts([Account])
+        case failure(CLIResult)
+    }
+
+    private func update(_ targets: [AccountTarget], enabled: Bool) -> CLIResult {
+        let accounts: [Account]
+        switch resolve(targets) {
+        case .accounts(let resolved): accounts = resolved
+        case .failure(let result): return result
+        }
+        for account in accounts { settings.setEnabled(enabled, for: account) }
         let action = enabled ? "Enabled" : "Disabled"
-        let names = providers.map(\.rawValue).joined(separator: ", ")
+        let names = accounts.map(\.rawValue).joined(separator: ", ")
         return .init(standardOutput: "\(action): \(names)", standardError: "", exitCode: 0)
     }
 
-    private func setKey(for provider: ProviderID) -> CLIResult {
-        guard let secret = Self.readSecret(prompt: "Paste the \(provider.title) key and press Enter: "),
+    private func setKey(for account: Account) -> CLIResult {
+        if account.name != nil, secrets.secret(for: account) == nil {
+            let named = secrets.namedAccounts().filter { $0.provider == account.provider }
+            guard named.count < Account.limitPerProvider - 1 else {
+                return .init(
+                    standardOutput: "",
+                    standardError: "\(account.provider.title) already has \(Account.limitPerProvider) accounts, the default and \(named.map { "'\($0.name ?? "")'" }.joined(separator: " and ")). Remove one with 'meter clear-key \(account.provider.rawValue) --name <name>'.",
+                    exitCode: 64
+                )
+            }
+        }
+        guard let secret = Self.readSecret(prompt: "Paste the \(account.title) key and press Enter: "),
               !secret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return .init(standardOutput: "", standardError: "No key was read from input.", exitCode: 64)
         }
         do {
-            try secrets.setSecret(secret, for: provider)
-            return .init(standardOutput: "Stored a key for \(provider.rawValue)", standardError: "", exitCode: 0)
+            try secrets.setSecret(secret, for: account)
+            return .init(standardOutput: "Stored a key for \(account.rawValue)", standardError: "", exitCode: 0)
         } catch {
             return .init(standardOutput: "", standardError: "Could not store the key: \(error.localizedDescription)", exitCode: 2)
         }
     }
 
-    private func clearKey(for provider: ProviderID) -> CLIResult {
+    private func clearKey(for account: Account) -> CLIResult {
         do {
-            try secrets.setSecret(nil, for: provider)
-            return .init(standardOutput: "Removed the stored key for \(provider.rawValue)", standardError: "", exitCode: 0)
+            try secrets.setSecret(nil, for: account)
+            let removed = account.name == nil ? "the stored key for \(account.rawValue)" : "account \(account.rawValue)"
+            return .init(standardOutput: "Removed \(removed)", standardError: "", exitCode: 0)
         } catch {
             return .init(standardOutput: "", standardError: "Could not remove the key: \(error.localizedDescription)", exitCode: 2)
         }
@@ -114,9 +160,10 @@ struct MeterCLIApplication {
     }
 
     private func doctor(json: Bool, strict: Bool) -> CLIResult {
-        let statuses = CredentialDoctor.diagnose(settings.providerOrder)
-        let enabled = Set(settings.enabledProviders())
-        let blocked = statuses.filter { enabled.contains($0.provider) && !$0.isUsable }
+        let accounts = accounts
+        let statuses = accounts.map { CredentialDoctor.diagnose($0) }
+        let enabled = Set(accounts.filter(settings.enabled))
+        let blocked = statuses.filter { enabled.contains($0.accountID) && !$0.isUsable }
         let exitCode: Int32 = strict && !blocked.isEmpty ? 1 : 0
         do {
             let output = json ? try CLIJSONFormatter.doctor(statuses) : CLITextFormatter.doctor(statuses)
@@ -127,10 +174,15 @@ struct MeterCLIApplication {
     }
 
     private func status(_ selection: ProviderSelection, json: Bool, strict: Bool) async -> CLIResult {
-        let selected = switch selection {
-        case .enabled: settings.enabledProviders()
-        case .all: settings.providerOrder
-        case .named(let providers): providers
+        let selected: [Account]
+        switch selection {
+        case .enabled: selected = accounts.filter(settings.enabled)
+        case .all: selected = accounts
+        case .named(let targets):
+            switch resolve(targets) {
+            case .accounts(let resolved): selected = resolved
+            case .failure(let result): return result
+            }
         }
         guard !selected.isEmpty else {
             return .init(
@@ -163,8 +215,8 @@ struct MeterCLIApplication {
       meter providers
       meter enable <provider> ...
       meter disable <provider> ...
-      meter set-key <provider>
-      meter clear-key <provider>
+      meter set-key <provider> [--name <name>]
+      meter clear-key <provider> [--name <name>]
 
     Providers:
       codex, claude, cursor, deepseek, command-code, opencode-go
@@ -173,6 +225,12 @@ struct MeterCLIApplication {
       With no provider, status queries the providers enabled in Meter settings.
       The 'all' selector queries every provider, including disabled providers.
       'meter codex' is shorthand for 'meter status codex'.
+      A provider name covers all of its accounts; 'deepseek#work' names one.
+
+    Accounts:
+      DeepSeek, Command Code and OpenCode Go can hold up to three accounts: the default
+      one and two named ones. Add one with 'meter set-key deepseek --name work' and
+      remove it with 'meter clear-key deepseek --name work'.
 
     Commands:
       status       Query provider usage

@@ -285,17 +285,24 @@ struct DeepSeekUsageProvider: UsageProvider {
     let id = ProviderID.deepSeek
     private let store: SecretStore
     private let environment: [String: String]
+    private let account: Account
 
-    init(store: SecretStore = .default, environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init(
+        store: SecretStore = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        account: Account = Account(.deepSeek)
+    ) {
         self.store = store
         self.environment = environment
+        self.account = account
     }
 
     /// The environment variable wins so existing shell setups keep working; the stored key
     /// is what lets the app find one when launched from Finder, which inherits no shell.
+    /// A named account has only its stored key.
     func apiKey() -> String? {
-        if let key = environment[Self.environmentKey], !key.isEmpty { return key }
-        return store.secret(for: .deepSeek)
+        if account.name == nil, let key = environment[Self.environmentKey], !key.isEmpty { return key }
+        return store.secret(for: account)
     }
 
     func fetch() async -> UsageSnapshot {

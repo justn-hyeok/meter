@@ -7,7 +7,7 @@ enum CLITextFormatter {
         let tightest = tightestWindow(in: snapshots)
         return snapshots.map { snapshot in
             let stale = snapshot.state == .stale
-            var header = style.wrap(snapshot.provider.title, [.bold])
+            var header = style.wrap(snapshot.accountID.title, [.bold])
             if stale {
                 header += "  " + style.wrap("(stale: \(snapshot.message ?? "showing the last figures that arrived"))", [.dim])
             }
@@ -16,7 +16,7 @@ enum CLITextFormatter {
                 lines.append("  " + style.wrap("unavailable  \(snapshot.message ?? "No usage data")", [.dim]))
             } else {
                 for bucket in snapshot.buckets {
-                    let isTightest = tightest == BucketKey(provider: snapshot.provider, bucketID: bucket.id)
+                    let isTightest = tightest == BucketKey(account: snapshot.accountID, bucketID: bucket.id)
                     let emphasis: [TerminalStyle.Attribute] = (isTightest ? [.bold] : []) + (stale ? [.dim] : [])
                     let row = [
                         style.wrap(fit(bucket.label, width: 20), emphasis),
@@ -45,17 +45,21 @@ enum CLITextFormatter {
         value.count >= width ? value : String(repeating: " ", count: width - value.count) + value
     }
 
-    static func providers(settings: MeterSettings) -> String {
-        settings.providerOrder.map { provider in
-            "\(settings.enabled(provider) ? "enabled " : "disabled")  \(provider.rawValue.padding(toLength: 12, withPad: " ", startingAt: 0)) \(provider.title)"
+    static func providers(settings: MeterSettings, accounts: [Account]) -> String {
+        let ordered = settings.order(of: accounts)
+        let width = max(12, ordered.map(\.rawValue.count).max() ?? 0)
+        return ordered.map { account in
+            "\(settings.enabled(account) ? "enabled " : "disabled")  \(account.rawValue.padding(toLength: width, withPad: " ", startingAt: 0)) \(account.title)"
         }.joined(separator: "\n")
     }
 
     static func doctor(_ statuses: [CredentialStatus]) -> String {
-        statuses.map { status in
+        // Wide enough for the longest name, so a named account does not push its row out.
+        let nameWidth = max(13, (statuses.map(\.accountID.rawValue.count).max() ?? 0) + 1)
+        return statuses.map { status in
             [
                 padded(status.availability.rawValue, to: 8),
-                padded(status.provider.rawValue, to: 13),
+                padded(status.accountID.rawValue, to: nameWidth),
                 padded(status.source, to: 32),
                 status.detail,
             ].joined(separator: " ")

@@ -1,7 +1,14 @@
 import Foundation
 import MeterCore
 
-/// Which providers a status query covers.
+/// What a provider argument names: every account of a provider, or one account written
+/// `provider#name`.
+enum AccountTarget: Equatable {
+    case provider(ProviderID)
+    case account(Account)
+}
+
+/// Which accounts a status query covers.
 ///
 /// `all` is its own case. It used to expand to every provider in declaration order, and
 /// the query then recognised it by comparing against that list - so typing all five names
@@ -12,17 +19,17 @@ enum ProviderSelection: Equatable {
     /// Every provider, switched on or not, in the menu's order.
     case all
     /// Exactly these, in the order typed.
-    case named([ProviderID])
+    case named([AccountTarget])
 }
 
 enum CLICommand: Equatable {
     case status(ProviderSelection)
     case doctor
     case providers
-    case enable([ProviderID])
-    case disable([ProviderID])
-    case setKey(ProviderID)
-    case clearKey(ProviderID)
+    case enable([AccountTarget])
+    case disable([AccountTarget])
+    case setKey(Account)
+    case clearKey(Account)
     case help
     case version
 }
@@ -41,6 +48,10 @@ enum CLIArgumentError: LocalizedError, Equatable {
     case statusOnlyOption
     case oneProviderRequired(String)
     case providerTakesNoKey(ProviderID)
+    case providerTakesNoNamedAccounts(ProviderID)
+    case invalidAccountName(String)
+    case missingAccountName
+    case nameOnlyForKeys
 
     var errorDescription: String? {
         switch self {
@@ -56,6 +67,14 @@ enum CLIArgumentError: LocalizedError, Equatable {
             "The \(command) command takes exactly one provider"
         case .providerTakesNoKey(let provider):
             "\(provider.title) does not use a stored key; Meter reads its credential from this machine"
+        case .providerTakesNoNamedAccounts(let provider):
+            "\(provider.title) has one account, the one signed in on this Mac. Named accounts are for DeepSeek, Command Code and OpenCode Go"
+        case .invalidAccountName(let name):
+            "Invalid account name '\(name)': use up to 20 characters, without '#' or surrounding spaces"
+        case .missingAccountName:
+            "--name needs a value"
+        case .nameOnlyForKeys:
+            "--name is only valid for set-key and clear-key"
         case .statusOnlyOption:
             "The --json and --strict options are only valid for status and doctor queries"
         }
@@ -66,9 +85,23 @@ enum CLIArgumentParser {
     static func parse(_ arguments: [String]) throws -> CLIOptions {
         var json = false
         var strict = false
+        var name: String?
         var positional: [String] = []
 
-        for argument in arguments {
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            index += 1
+            if argument == "--name" {
+                guard index < arguments.count else { throw CLIArgumentError.missingAccountName }
+                name = arguments[index]
+                index += 1
+                continue
+            }
+            if argument.hasPrefix("--name=") {
+                name = String(argument.dropFirst("--name=".count))
+                continue
+            }
             switch argument {
             case "--json": json = true
             case "--strict": strict = true
@@ -81,21 +114,33 @@ enum CLIArgumentParser {
         }
 
         guard let first = positional.first else {
+            if name != nil { throw CLIArgumentError.nameOnlyForKeys }
             return .init(command: .status(.enabled), json: json, strict: strict)
         }
+        if name != nil, first != "set-key", first != "clear-key" { throw CLIArgumentError.nameOnlyForKeys }
 
         let rest = Array(positional.dropFirst())
         let command: CLICommand
         switch first {
         case "status": command = .status(try parseSelection(rest))
         case "set-key", "clear-key":
-            guard let providers = try parseProviders(rest), providers.count == 1 else {
+            guard let targets = try parseTargets(rest), targets.count == 1 else {
                 throw CLIArgumentError.oneProviderRequired(first)
             }
-            guard providers[0].acceptsStoredKey else {
-                throw CLIArgumentError.providerTakesNoKey(providers[0])
+            let account: Account
+            switch targets[0] {
+            case .account(let named): account = named
+            case .provider(let provider):
+                guard provider.acceptsStoredKey else { throw CLIArgumentError.providerTakesNoKey(provider) }
+                if let name {
+                    guard provider.acceptsNamedAccounts else { throw CLIArgumentError.providerTakesNoNamedAccounts(provider) }
+                    guard Account.isValid(name: name) else { throw CLIArgumentError.invalidAccountName(name) }
+                    account = Account(provider, name: name)
+                } else {
+                    account = Account(provider)
+                }
             }
-            command = first == "set-key" ? .setKey(providers[0]) : .clearKey(providers[0])
+            command = first == "set-key" ? .setKey(account) : .clearKey(account)
         case "doctor":
             guard rest.isEmpty else { throw CLIArgumentError.unexpectedArguments(first) }
             command = .doctor
@@ -104,10 +149,10 @@ enum CLIArgumentParser {
             command = .providers
         case "enable", "disable":
             guard !rest.isEmpty else { throw CLIArgumentError.missingProviders(first) }
-            guard let providers = try parseProviders(rest), !providers.isEmpty else {
+            guard let targets = try parseTargets(rest), !targets.isEmpty else {
                 throw CLIArgumentError.missingProviders(first)
             }
-            command = first == "enable" ? .enable(providers) : .disable(providers)
+            command = first == "enable" ? .enable(targets) : .disable(targets)
         default:
             command = .status(try parseSelection(positional))
         }
@@ -124,21 +169,34 @@ enum CLIArgumentParser {
     private static func parseSelection(_ values: [String]) throws -> ProviderSelection {
         // Case-insensitive like the provider names: `meter CODEX` worked and `meter ALL` did not.
         if values.count == 1, values[0].lowercased() == "all" { return .all }
-        guard let providers = try parseProviders(values) else { return .enabled }
-        return .named(providers)
+        guard let targets = try parseTargets(values) else { return .enabled }
+        return .named(targets)
     }
 
-    private static func parseProviders(_ values: [String]) throws -> [ProviderID]? {
+    private static func parseTargets(_ values: [String]) throws -> [AccountTarget]? {
         if values.isEmpty { return nil }
 
-        var providers: [ProviderID] = []
+        var targets: [AccountTarget] = []
         for value in values {
-            guard let provider = provider(named: value) else {
-                throw CLIArgumentError.unknownCommandOrProvider(value)
-            }
-            if !providers.contains(provider) { providers.append(provider) }
+            let target = try target(named: value)
+            if !targets.contains(target) { targets.append(target) }
         }
-        return providers
+        return targets
+    }
+
+    /// `deepseek` for every DeepSeek account, `deepseek#work` for the one named work.
+    private static func target(named value: String) throws -> AccountTarget {
+        guard let separator = value.firstIndex(of: "#") else {
+            guard let provider = provider(named: value) else { throw CLIArgumentError.unknownCommandOrProvider(value) }
+            return .provider(provider)
+        }
+        let name = String(value[value.index(after: separator)...])
+        guard let provider = provider(named: String(value[..<separator])) else {
+            throw CLIArgumentError.unknownCommandOrProvider(value)
+        }
+        guard provider.acceptsNamedAccounts else { throw CLIArgumentError.providerTakesNoNamedAccounts(provider) }
+        guard Account.isValid(name: name) else { throw CLIArgumentError.invalidAccountName(name) }
+        return .account(Account(provider, name: name))
     }
 
     private static func provider(named value: String) -> ProviderID? {

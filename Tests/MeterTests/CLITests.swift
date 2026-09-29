@@ -7,13 +7,13 @@ import Testing
     #expect(try CLIArgumentParser.parse([]) == .init(command: .status(.enabled), json: false, strict: false))
     #expect(
         try CLIArgumentParser.parse(["codex", "command-code", "--json", "--strict"])
-            == .init(command: .status(.named([.codex, .commandCode])), json: true, strict: true)
+            == .init(command: .status(.named([.provider(.codex), .provider(.commandCode)])), json: true, strict: true)
     )
     #expect(try CLIArgumentParser.parse(["status", "all"]).command == .status(.all))
     #expect(try CLIArgumentParser.parse(["ALL"]).command == .status(.all))
     // Every name typed out is a named list, not `all`: it prints in the order typed.
     let typed = ProviderID.allCases.map(\.rawValue)
-    #expect(try CLIArgumentParser.parse(typed).command == .status(.named(ProviderID.allCases)))
+    #expect(try CLIArgumentParser.parse(typed).command == .status(.named(ProviderID.allCases.map { .provider($0) })))
 }
 
 @Test func rejectsUnknownProvidersAndMissingMutationTargets() {
@@ -62,7 +62,7 @@ import Testing
         .cursor: StubProvider(snapshot: .unavailable(.cursor, "sign in")),
     ])
     let app = MeterCLIApplication(service: service, settings: MeterSettings(defaults: defaults))
-    let result = await app.run(.init(command: .status(.named([.codex, .cursor])), json: false, strict: true))
+    let result = await app.run(.init(command: .status(.named([.provider(.codex), .provider(.cursor)])), json: false, strict: true))
 
     #expect(result.exitCode == 1)
     #expect(result.standardOutput.contains("Codex"))
@@ -101,8 +101,8 @@ private struct StubProvider: UsageProvider {
 }
 
 @Test func parsesKeyCommands() throws {
-    #expect(try CLIArgumentParser.parse(["set-key", "deepseek"]).command == .setKey(.deepSeek))
-    #expect(try CLIArgumentParser.parse(["clear-key", "deepseek"]).command == .clearKey(.deepSeek))
+    #expect(try CLIArgumentParser.parse(["set-key", "deepseek"]).command == .setKey(Account(.deepSeek)))
+    #expect(try CLIArgumentParser.parse(["clear-key", "deepseek"]).command == .clearKey(Account(.deepSeek)))
 
     #expect(throws: CLIArgumentError.oneProviderRequired("set-key")) {
         try CLIArgumentParser.parse(["set-key"])
@@ -114,11 +114,11 @@ private struct StubProvider: UsageProvider {
     #expect(throws: CLIArgumentError.providerTakesNoKey(.codex)) {
         try CLIArgumentParser.parse(["set-key", "codex"])
     }
-    #expect(try CLIArgumentParser.parse(["set-key", "claude"]).command == .setKey(.claude))
+    #expect(try CLIArgumentParser.parse(["set-key", "claude"]).command == .setKey(Account(.claude)))
 }
 
 @Test func recognisesClaudeAsAProvider() throws {
-    #expect(try CLIArgumentParser.parse(["claude"]).command == .status(.named([.claude])))
+    #expect(try CLIArgumentParser.parse(["claude"]).command == .status(.named([.provider(.claude)])))
     #expect(ProviderID.allCases.contains(.claude))
     #expect(ProviderID.claude.acceptsStoredKey)
     #expect(ProviderID.deepSeek.acceptsStoredKey)
@@ -201,8 +201,64 @@ private struct StubProvider: UsageProvider {
     let settings = MeterSettings(defaults: defaults)
     settings.providerOrder = [.commandCode, .cursor, .codex, .claude, .deepSeek, .openCodeGo]
 
-    let names = CLITextFormatter.providers(settings: settings)
+    let names = CLITextFormatter.providers(settings: settings, accounts: ProviderID.allCases.map { Account($0) })
         .split(separator: "\n")
         .map { $0.split(separator: " ", omittingEmptySubsequences: true)[1] }
     #expect(names == ["command-code", "cursor", "codex", "claude", "deepseek", "opencode-go"])
+}
+
+@Test func parsesNamedAccounts() throws {
+    #expect(try CLIArgumentParser.parse(["set-key", "deepseek", "--name", "work"]).command
+        == .setKey(Account(.deepSeek, name: "work")))
+    #expect(try CLIArgumentParser.parse(["clear-key", "opencode-go", "--name=회사"]).command
+        == .clearKey(Account(.openCodeGo, name: "회사")))
+    #expect(try CLIArgumentParser.parse(["deepseek#work", "codex"]).command
+        == .status(.named([.account(Account(.deepSeek, name: "work")), .provider(.codex)])))
+    #expect(try CLIArgumentParser.parse(["disable", "command-code#side"]).command
+        == .disable([.account(Account(.commandCode, name: "side"))]))
+
+    // Subscriptions belong to the one login on this Mac.
+    #expect(throws: CLIArgumentError.providerTakesNoNamedAccounts(.claude)) {
+        try CLIArgumentParser.parse(["set-key", "claude", "--name", "work"])
+    }
+    #expect(throws: CLIArgumentError.providerTakesNoNamedAccounts(.codex)) {
+        try CLIArgumentParser.parse(["codex#work"])
+    }
+    #expect(throws: CLIArgumentError.invalidAccountName("a#b")) {
+        try CLIArgumentParser.parse(["set-key", "deepseek", "--name", "a#b"])
+    }
+    #expect(throws: CLIArgumentError.missingAccountName) {
+        try CLIArgumentParser.parse(["set-key", "deepseek", "--name"])
+    }
+    #expect(throws: CLIArgumentError.nameOnlyForKeys) {
+        try CLIArgumentParser.parse(["deepseek", "--name", "work"])
+    }
+}
+
+@Test func aFourthAccountIsRefusedBeforeAnyKeyIsRead() async throws {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "MeterTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let secrets = SecretStore(fileURL: directory.appending(path: "credentials.json"))
+    try secrets.setSecret("sk-a", for: Account(.deepSeek, name: "a"))
+    try secrets.setSecret("sk-b", for: Account(.deepSeek, name: "b"))
+    let suite = "MeterCLITests.limit.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let app = MeterCLIApplication(service: UsageService(providers: [:]), settings: MeterSettings(defaults: defaults), secrets: secrets)
+    let result = await app.run(.init(command: .setKey(Account(.deepSeek, name: "c")), json: false, strict: false))
+    #expect(result.exitCode == 64)
+    #expect(result.standardError.contains("already has 3 accounts"))
+    #expect(secrets.namedAccounts() == [Account(.deepSeek, name: "a"), Account(.deepSeek, name: "b")])
+}
+
+@Test func namedAccountsAreListedAndTitled() throws {
+    let suite = "MeterCLITests.named.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let settings = MeterSettings(defaults: defaults)
+    let accounts = ProviderID.allCases.map { Account($0) } + [Account(.deepSeek, name: "work")]
+
+    let lines = CLITextFormatter.providers(settings: settings, accounts: accounts).split(separator: "\n")
+    #expect(lines.last == "enabled   deepseek#work DeepSeek API · work")
 }

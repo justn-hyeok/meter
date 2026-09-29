@@ -52,7 +52,8 @@ private func isolatedSettings() throws -> (MeterSettings, () -> Void) {
             .codex: StubProvider(id: .codex, snapshot: percentSnapshot(.codex, used: 10)),
             .cursor: StubProvider(id: .cursor, snapshot: percentSnapshot(.cursor, used: 90)),
         ]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
 
     await store.refreshAll()
@@ -74,7 +75,8 @@ private func isolatedSettings() throws -> (MeterSettings, () -> Void) {
         service: UsageService(providers: [
             .codex: StubProvider(id: .codex, snapshot: .unavailable(.codex, "no session")),
         ]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
 
     await store.refreshAll()
@@ -97,7 +99,8 @@ private func isolatedSettings() throws -> (MeterSettings, () -> Void) {
             .codex: StubProvider(id: .codex, snapshot: .unavailable(.codex, "no session")),
             .cursor: StubProvider(id: .cursor, snapshot: percentSnapshot(.cursor, used: 42)),
         ]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
 
     await store.refreshAll()
@@ -117,7 +120,8 @@ private func isolatedSettings() throws -> (MeterSettings, () -> Void) {
     let store = UsageStore(
         settings: settings,
         service: UsageService(providers: [.codex: QueuedProvider(id: .codex, queue: queue)]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
 
     await store.refreshAll()
@@ -145,7 +149,8 @@ private func isolatedSettings() throws -> (MeterSettings, () -> Void) {
         service: UsageService(providers: [
             .cursor: StubProvider(id: .cursor, snapshot: percentSnapshot(.cursor, used: 99)),
         ]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
 
     #expect(!store.enabled(.cursor))

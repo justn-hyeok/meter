@@ -10,52 +10,74 @@ public struct MeterSettings {
     }
 
     public func enabled(_ provider: ProviderID) -> Bool {
-        let key = key(for: provider)
+        enabled(Account(provider))
+    }
+
+    /// A named account is on until switched off: adding it was the choice to see it.
+    public func enabled(_ account: Account) -> Bool {
+        let key = key(for: account)
         if defaults.object(forKey: key) != nil {
             return defaults.bool(forKey: key)
         }
-        return Self.defaultEnabled(provider)
+        return account.name == nil ? Self.defaultEnabled(account.provider) : true
     }
 
     public func enabledProviders() -> [ProviderID] {
         providerOrder.filter(enabled)
     }
 
+    /// `accounts` in the arranged order, switched-off ones left out.
+    public func enabledAccounts(_ accounts: [Account]) -> [Account] {
+        order(of: accounts).filter(enabled)
+    }
+
     private static let orderKey = "providers.order"
 
-    /// The order the user arranged the providers in, shared by the menu and the CLI.
+    /// `accounts` in the order the user arranged them, shared by the menu and the CLI.
     ///
-    /// Unknown names are skipped and duplicates kept once, and a provider added in a later
-    /// version joins at the end rather than vanishing because the saved list predates it.
-    ///
-    /// Saving keeps the names this build does not know, each after the name it followed.
-    /// Writing only the known ones meant that running an older build after a newer one, then
-    /// dragging a card, sent the newer build's providers to the bottom of its list.
-    public var providerOrder: [ProviderID] {
-        get {
-            var seen = Set<ProviderID>()
-            let saved = (defaults.stringArray(forKey: Self.orderKey) ?? [])
-                .compactMap(ProviderID.init(rawValue:))
-                .filter { seen.insert($0).inserted }
-            return saved + ProviderID.allCases.filter { !seen.contains($0) }
-        }
-        nonmutating set {
-            var names: [String] = []
-            for name in newValue.map(\.rawValue) where !names.contains(name) { names.append(name) }
-            var previous: String?
-            for name in defaults.stringArray(forKey: Self.orderKey) ?? [] {
-                if ProviderID(rawValue: name) == nil, !names.contains(name) {
-                    let index = previous.flatMap { names.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
-                    names.insert(name, at: index)
-                }
-                if names.contains(name) { previous = name }
+    /// Saved names that are not among `accounts` are skipped and duplicates kept once, and
+    /// an account the saved list predates - a provider added in a later version, a newly
+    /// named account - joins at the end rather than vanishing.
+    public func order(of accounts: [Account]) -> [Account] {
+        let byName = Dictionary(accounts.map { ($0.rawValue, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<Account>()
+        let saved = (defaults.stringArray(forKey: Self.orderKey) ?? [])
+            .compactMap { byName[$0] }
+            .filter { seen.insert($0).inserted }
+        return saved + accounts.filter { !seen.contains($0) }
+    }
+
+    /// Saves `order`, keeping every saved name it does not mention, each after the name it
+    /// followed. Those are providers from a newer build and accounts whose key was removed:
+    /// writing only what this call knows sent a newer build's providers to the bottom of its
+    /// list, and would drop a removed account's place for when it comes back.
+    public func saveOrder(_ order: [Account]) {
+        var names: [String] = []
+        for name in order.map(\.rawValue) where !names.contains(name) { names.append(name) }
+        let mentioned = Set(names)
+        var previous: String?
+        for name in defaults.stringArray(forKey: Self.orderKey) ?? [] {
+            if !mentioned.contains(name), !names.contains(name) {
+                let index = previous.flatMap { names.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+                names.insert(name, at: index)
             }
-            defaults.set(names, forKey: Self.orderKey)
+            if names.contains(name) { previous = name }
         }
+        defaults.set(names, forKey: Self.orderKey)
+    }
+
+    /// The default accounts alone, for callers with no named accounts in view.
+    public var providerOrder: [ProviderID] {
+        get { order(of: ProviderID.allCases.map { Account($0) }).map(\.provider) }
+        nonmutating set { saveOrder(newValue.map { Account($0) }) }
     }
 
     public func setEnabled(_ enabled: Bool, for provider: ProviderID) {
-        defaults.set(enabled, forKey: key(for: provider))
+        setEnabled(enabled, for: Account(provider))
+    }
+
+    public func setEnabled(_ enabled: Bool, for account: Account) {
+        defaults.set(enabled, forKey: key(for: account))
     }
 
     /// On a new install, everything but Cursor, which is the only provider needing
@@ -86,6 +108,10 @@ public struct MeterSettings {
     }
 
     private func key(for provider: ProviderID) -> String {
-        "enabled.\(provider.rawValue)"
+        key(for: Account(provider))
+    }
+
+    private func key(for account: Account) -> String {
+        "enabled.\(account.rawValue)"
     }
 }

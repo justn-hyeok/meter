@@ -23,12 +23,26 @@ public struct SecretStore: Sendable {
     }
 
     public func secret(for provider: ProviderID) -> String? {
-        guard let value = document()[provider.rawValue] as? String, !value.isEmpty else { return nil }
+        secret(for: Account(provider))
+    }
+
+    public func secret(for account: Account) -> String? {
+        guard let value = document()[account.rawValue] as? String, !value.isEmpty else { return nil }
         return value
     }
 
     public func hasSecret(for provider: ProviderID) -> Bool {
         secret(for: provider) != nil
+    }
+
+    /// Named accounts with a key, per provider in the order their names sort.
+    public func namedAccounts() -> [Account] {
+        document().compactMap { key, value -> Account? in
+            guard let value = value as? String, !value.isEmpty,
+                  let account = Account(rawValue: key), account.name != nil else { return nil }
+            return account
+        }
+        .sorted { ($0.provider.sortIndex, $0.name ?? "") < ($1.provider.sortIndex, $1.name ?? "") }
     }
 
     /// Passing nil removes the entry.
@@ -37,6 +51,10 @@ public struct SecretStore: Sendable {
     /// `meter set-key` in a terminal are separate processes on one file, and two unlocked
     /// read-modify-writes drop whichever key the loser had just added.
     public func setSecret(_ value: String?, for provider: ProviderID) throws {
+        try setSecret(value, for: Account(provider))
+    }
+
+    public func setSecret(_ value: String?, for account: Account) throws {
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true,
@@ -53,9 +71,9 @@ public struct SecretStore: Sendable {
         var root = Self.parse(readAll(descriptor))
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmed, !trimmed.isEmpty {
-            root[provider.rawValue] = trimmed
+            root[account.rawValue] = trimmed
         } else {
-            root[provider.rawValue] = nil
+            root[account.rawValue] = nil
         }
 
         let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])

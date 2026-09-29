@@ -12,6 +12,7 @@ Meter is a private macOS menu bar app and CLI that keeps usage and quota informa
 - DeepSeek API balance
 - Command Code GOAT monthly credits and rolling limits
 - OpenCode Go 5-hour, weekly, and monthly limits
+- Up to three accounts each for DeepSeek, Command Code, and OpenCode Go, each on its own card
 - Per-provider toggles that persist across launches
 - Launch at login
 - **⌃⌥M** opens and closes the menu from anywhere
@@ -38,7 +39,7 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 ## Install
 
-Download `Meter-0.4.22-macos-universal-app.zip` from the [v0.4.22 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.22), extract it, and move `Meter.app` to `/Applications`.
+Download `Meter-0.4.23-macos-universal-app.zip` from the [v0.4.23 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.23), extract it, and move `Meter.app` to `/Applications`.
 
 **Required after downloading:** the release is not notarized, so macOS refuses to launch it until you clear the quarantine flag the browser attached. Run this once after moving the app:
 
@@ -110,6 +111,19 @@ Connect OpenCode Go once in OpenCode (`/connect`, then OpenCode Go). OpenCode ke
 
 OpenCode has no documented usage API for Go. Meter calls `opencode.ai/zen/go/v1/usage`, the route the OpenCode console reads, with that key. It shows the 5-hour, weekly, and monthly windows as percentages.
 
+### Multiple accounts
+
+DeepSeek, Command Code, and OpenCode Go can each hold up to three accounts: the default one described above, plus two named ones. Named accounts are added and removed from the command line only:
+
+```sh
+meter set-key deepseek --name work      # reads the key from stdin, like set-key
+meter clear-key deepseek --name work
+```
+
+Each named account gets its own card, titled like "DeepSeek API · work", with its own checkbox and place in the order. A named account uses only the key stored for it, never the environment variable or the provider CLI's login, which belong to the default account. In the CLI, a provider name covers all of its accounts, and `deepseek#work` selects just one: `meter deepseek#work`, `meter disable deepseek#work`.
+
+Codex, Claude, and Cursor have one account each: whichever one their app or CLI is signed in to on this Mac.
+
 ## Privacy and reliability
 
 - Credentials, cookies, and tokens are never written to logs.
@@ -172,9 +186,9 @@ With no provider argument, `meter` queries the providers enabled in the shared s
 
 `meter set-key <provider>` stores an API key for the providers whose credential Meter cannot find on the machine, reading it from stdin; `meter clear-key <provider>` removes it. `meter doctor` reports where each credential comes from and whether it is present. It makes no network request and never shows a keychain prompt, so it stays usable when a provider is broken. With `--strict` it exits 1 when an enabled provider has no credential.
 
-The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`. Schema 3 changes no fields; it marks that `snapshots` and doctor's `credentials` follow the order arranged in the menu (or, for named providers, the order typed). That ordering already appeared under schema 2 in 0.4.16–0.4.19 (0.4.19 only for doctor), so read entries by `provider` rather than by position.
+The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`. Schema 3 changes no fields; it marks that `snapshots` and doctor's `credentials` follow the order arranged in the menu (or, for named providers, the order typed). That ordering already appeared under schema 2 in 0.4.16–0.4.19 (0.4.19 only for doctor), so read entries by `provider` rather than by position. A named account's entries also carry an `account` field with its name; the default account's entries have none, so their JSON is unchanged, but a provider with named accounts appears once per account.
 
-The v0.4.22 release also includes `meter-0.4.22-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
+The v0.4.23 release also includes `meter-0.4.23-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh

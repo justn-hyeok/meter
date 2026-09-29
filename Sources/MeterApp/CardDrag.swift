@@ -12,10 +12,10 @@ final class CardDrag {
     static let type = UTType(exportedAs: "com.justn.meter.provider-card")
     static let pasteboardType = NSPasteboard.PasteboardType(type.identifier)
 
-    private(set) var provider: ProviderID?
-    @ObservationIgnored private var orderBefore: [ProviderID] = []
+    private(set) var account: Account?
+    @ObservationIgnored private var orderBefore: [Account] = []
     /// Where each card sits in the menu, for deciding which cards the pointer has passed.
-    @ObservationIgnored var frames: [ProviderID: CGRect] = [:]
+    @ObservationIgnored var frames: [Account: CGRect] = [:]
     /// The coordinate space the frames are measured in: the whole menu.
     nonisolated static let space = "menu"
 
@@ -23,10 +23,10 @@ final class CardDrag {
     private(set) var liftedFrame: CGRect?
     @ObservationIgnored private var grabOffset: CGFloat = 0
 
-    func begin(_ provider: ProviderID, atY y: CGFloat, store: UsageStore) {
-        guard let card = frames[provider] else { return }
-        self.provider = provider
-        orderBefore = store.providerOrder
+    func begin(_ account: Account, atY y: CGFloat, store: UsageStore) {
+        guard let card = frames[account] else { return }
+        self.account = account
+        orderBefore = store.order
         grabOffset = y - card.minY
         liftedFrame = card
     }
@@ -37,16 +37,16 @@ final class CardDrag {
     /// the pointer on the far half of the card it passed, so the same card cannot trigger
     /// the reverse move while it animates.
     func moved(toY y: CGFloat, store: UsageStore, animation: Animation?) {
-        let order = store.providerOrder
-        guard let carried = provider, let from = order.firstIndex(of: carried) else { return }
+        let order = store.order
+        guard let carried = account, let from = order.firstIndex(of: carried) else { return }
         if let lifted = liftedFrame { liftedFrame = lifted.offsetBy(dx: 0, dy: y - grabOffset - lifted.minY) }
-        var target: ProviderID?
-        for provider in order[(from + 1)...] where frames[provider].map({ y > $0.midY }) == true {
-            target = provider
+        var target: Account?
+        for other in order[(from + 1)...] where frames[other].map({ y > $0.midY }) == true {
+            target = other
         }
         if target == nil {
-            for provider in order[..<from].reversed() where frames[provider].map({ y < $0.midY }) == true {
-                target = provider
+            for other in order[..<from].reversed() where frames[other].map({ y < $0.midY }) == true {
+                target = other
             }
         }
         if let target {
@@ -57,13 +57,13 @@ final class CardDrag {
     /// A drop saves the order on screen; anything else - Esc, or a release outside the
     /// menu - puts back the order from before the drag.
     func finish(store: UsageStore, commit: Bool, animation: Animation?) {
-        guard provider != nil else { return }
+        guard account != nil else { return }
         if commit {
             store.saveOrder()
         } else {
             withAnimation(animation) { store.restoreOrder(orderBefore) }
         }
-        provider = nil
+        account = nil
         liftedFrame = nil
     }
 }
@@ -80,7 +80,7 @@ final class CardDrag {
 /// macOS drew a card-sized drag image at about half size, a card that shrank as it was
 /// picked up, and nothing in the drag API sets that scale.
 struct CardDragSource: NSViewRepresentable {
-    let provider: ProviderID
+    let account: Account
     /// Shown on hover. The drag surface covers the card, so it carries the card's tooltip.
     let help: String?
     /// The pointer's height in the menu's coordinates when the drag starts.
@@ -93,7 +93,7 @@ struct CardDragSource: NSViewRepresentable {
     func makeNSView(context: Context) -> DragSourceView { DragSourceView() }
 
     func updateNSView(_ view: DragSourceView, context: Context) {
-        view.provider = provider
+        view.account = account
         view.toolTip = help
         view.onBegin = onBegin
         view.onMove = onMove
@@ -102,7 +102,7 @@ struct CardDragSource: NSViewRepresentable {
 }
 
 final class DragSourceView: NSView, NSDraggingSource {
-    var provider: ProviderID?
+    var account: Account?
     var onBegin: (CGFloat) -> Void = { _ in }
     var onMove: (CGFloat) -> Void = { _ in }
     var onEnd: (Bool) -> Void = { _ in }
@@ -121,14 +121,14 @@ final class DragSourceView: NSView, NSDraggingSource {
     override func mouseUp(with event: NSEvent) { mouseDown = nil }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let down = mouseDown, let provider else { return }
+        guard let down = mouseDown, let account else { return }
         let start = down.locationInWindow, now = event.locationInWindow
         // A few points of slack, so a click with a trembling hand stays a click.
         guard hypot(now.x - start.x, now.y - start.y) >= 4 else { return }
         mouseDown = nil
 
         let item = NSPasteboardItem()
-        item.setString(provider.rawValue, forType: CardDrag.pasteboardType)
+        item.setString(account.rawValue, forType: CardDrag.pasteboardType)
         let dragItem = NSDraggingItem(pasteboardWriter: item)
         let point = convert(now, from: nil)
         dragItem.setDraggingFrame(NSRect(x: point.x, y: point.y, width: 1, height: 1), contents: NSImage(size: NSSize(width: 1, height: 1)))

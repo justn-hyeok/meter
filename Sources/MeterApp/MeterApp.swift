@@ -53,16 +53,16 @@ private struct MeterMenu: View {
 
             Divider()
             VStack(spacing: 8) {
-                ForEach(store.providerOrder) { provider in
-                    ProviderCard(provider: provider, store: store, tightest: tightest, drag: drag, animation: reorderAnimation)
+                ForEach(store.order) { account in
+                    ProviderCard(account: account, store: store, tightest: tightest, drag: drag, animation: reorderAnimation)
                         // The carried card leaves an empty place behind: the card itself is what
                         // moves under the pointer, and a faded copy made it look like two.
-                        .opacity(drag.provider == provider ? 0 : 1)
+                        .opacity(drag.account == account ? 0 : 1)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(CardDrag.space)) } action: {
-                            drag.frames[provider] = $0
+                            drag.frames[account] = $0
                         }
-                        .accessibilityAction(named: "Move up") { moveByKeyboard(provider, by: -1) }
-                        .accessibilityAction(named: "Move down") { moveByKeyboard(provider, by: 1) }
+                        .accessibilityAction(named: "Move up") { moveByKeyboard(account, by: -1) }
+                        .accessibilityAction(named: "Move down") { moveByKeyboard(account, by: 1) }
                 }
             }
             .padding(12)
@@ -94,8 +94,8 @@ extension MeterMenu {
     /// The card being carried, drawn at full size under the pointer with a shadow to show
     /// it is off the list. It moves only up and down, the one direction the list reorders.
     @ViewBuilder private var liftedCard: some View {
-        if let provider = drag.provider, let frame = drag.liftedFrame {
-            ProviderCard(provider: provider, store: store, tightest: store.tightestLimit, drag: drag, animation: nil, lifted: true)
+        if let account = drag.account, let frame = drag.liftedFrame {
+            ProviderCard(account: account, store: store, tightest: store.tightestLimit, drag: drag, animation: nil, lifted: true)
                 .frame(width: frame.width, height: frame.height)
                 .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
@@ -110,10 +110,10 @@ extension MeterMenu {
         reduceMotion ? nil : .snappy(duration: 0.2)
     }
 
-    private func moveByKeyboard(_ provider: ProviderID, by step: Int) {
-        let order = store.providerOrder
-        guard let index = order.firstIndex(of: provider), order.indices.contains(index + step) else { return }
-        withAnimation(reorderAnimation) { store.move(provider, to: order[index + step]) }
+    private func moveByKeyboard(_ account: Account, by step: Int) {
+        let order = store.order
+        guard let index = order.firstIndex(of: account), order.indices.contains(index + step) else { return }
+        withAnimation(reorderAnimation) { store.move(account, to: order[index + step]) }
     }
 }
 
@@ -189,7 +189,7 @@ private struct KeyField: View {
 }
 
 private struct ProviderCard: View {
-    let provider: ProviderID
+    let account: Account
     @Bindable var store: UsageStore
     let tightest: BucketKey?
     let drag: CardDrag
@@ -198,25 +198,25 @@ private struct ProviderCard: View {
     var lifted = false
 
     var body: some View {
-        if store.enabled(provider) {
+        if store.enabled(account) {
             VStack(alignment: .leading, spacing: 5) {
                 VStack(alignment: .leading, spacing: 5) {
                     header
-                    if let snapshot = store.snapshots[provider], !snapshot.buckets.isEmpty {
+                    if let snapshot = store.snapshots[account], !snapshot.buckets.isEmpty {
                         ForEach(snapshot.buckets) { bucket in
-                            UsageRow(bucket: bucket, isTightest: tightest == BucketKey(provider: provider, bucketID: bucket.id))
+                            UsageRow(bucket: bucket, isTightest: tightest == BucketKey(account: account, bucketID: bucket.id))
                         }
                         .opacity(snapshot.state == .stale ? 0.55 : 1)
                     } else {
-                        Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
+                        Text(store.snapshots[account]?.message ?? "Waiting for refresh…")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                 }
                 .overlay { if !lifted { dragSurface } }
                 // Outside the drag surface: a drag that starts on a text field or a button
                 // took the click away from it whenever the pointer drifted a point.
-                if store.needsKey(provider) {
-                    KeyField(provider: provider, store: store)
+                if store.needsKey(account) {
+                    KeyField(provider: account.provider, store: store)
                 }
             }
             .padding(12)
@@ -235,15 +235,15 @@ private struct ProviderCard: View {
     }
 
     private var staleMessage: String? {
-        guard let snapshot = store.snapshots[provider], snapshot.state == .stale else { return nil }
+        guard let snapshot = store.snapshots[account], snapshot.state == .stale else { return nil }
         return snapshot.message ?? "Showing the last figures that arrived."
     }
 
     private var header: some View {
         HStack(spacing: 5) {
-            Text(provider.title)
+            Text(account.title)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(store.enabled(provider) ? .primary : .secondary)
+                .foregroundStyle(store.enabled(account) ? .primary : .secondary)
                 .alignmentGuide(.providerTitle) { $0[VerticalAlignment.center] }
             if staleMessage != nil {
                 // Figures that stopped updating looked exactly like fresh ones, which is the
@@ -261,9 +261,9 @@ private struct ProviderCard: View {
     /// Covers the title and the rows, so the card can be picked up anywhere but its controls.
     private var dragSurface: some View {
         CardDragSource(
-            provider: provider,
+            account: account,
             help: staleMessage,
-            onBegin: { y in drag.begin(provider, atY: y, store: store) },
+            onBegin: { y in drag.begin(account, atY: y, store: store) },
             onMove: { y in drag.moved(toY: y, store: store, animation: animation) },
             onEnd: { dropped in drag.finish(store: store, commit: dropped, animation: animation) }
         )
@@ -274,7 +274,7 @@ private struct ProviderCard: View {
     /// click. A checkbox, not a switch: five saturated blue pills were the loudest thing on
     /// screen, and blue now means "what is left" on every bar. One hue, one meaning.
     private var checkbox: some View {
-        Toggle("", isOn: Binding(get: { store.enabled(provider) }, set: { store.setEnabled($0, for: provider) }))
+        Toggle("", isOn: Binding(get: { store.enabled(account) }, set: { store.setEnabled($0, for: account) }))
             .labelsHidden().toggleStyle(.checkbox).controlSize(.small)
             .alignmentGuide(.providerTitle) { $0[VerticalAlignment.center] }
     }

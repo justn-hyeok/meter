@@ -10,18 +10,22 @@ public struct CredentialStatus: Sendable, Equatable, Codable {
     }
 
     public let provider: ProviderID
+    /// A named account's name; absent for the default account, whose JSON is unchanged.
+    public let account: String?
     public let source: String
     public let availability: Availability
     public let detail: String
 
-    public init(provider: ProviderID, source: String, availability: Availability, detail: String) {
+    public init(provider: ProviderID, account: String? = nil, source: String, availability: Availability, detail: String) {
         self.provider = provider
+        self.account = account
         self.source = source
         self.availability = availability
         self.detail = detail
     }
 
     public var isUsable: Bool { availability == .ready }
+    public var accountID: Account { Account(provider, name: account) }
 }
 
 /// Everything the doctor reads about the machine, in one place so every branch can be
@@ -73,6 +77,19 @@ public enum CredentialDoctor {
         in machine: DiagnosticEnvironment = .live
     ) -> [CredentialStatus] {
         providers.map { status(for: $0, in: machine) }
+    }
+
+    /// A named account is nothing but its stored key, so there is one thing to check.
+    public static func diagnose(_ account: Account, in machine: DiagnosticEnvironment = .live) -> CredentialStatus {
+        guard account.name != nil else { return status(for: account.provider, in: machine) }
+        let present = machine.secrets.secret(for: account) != nil
+        return .init(
+            provider: account.provider,
+            account: account.name,
+            source: "stored key",
+            availability: present ? .ready : .missing,
+            detail: present ? "stored key present" : "run 'meter set-key \(account.provider.rawValue) --name \(account.name ?? "")'"
+        )
     }
 
     private static func status(for provider: ProviderID, in machine: DiagnosticEnvironment) -> CredentialStatus {

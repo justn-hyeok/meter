@@ -3,12 +3,19 @@ import Observation
 
 /// Identifies one window across the whole menu.
 public struct BucketKey: Hashable, Sendable {
-    public let provider: ProviderID
+    public let account: Account
     public let bucketID: String
 
-    public init(provider: ProviderID, bucketID: String) {
-        self.provider = provider
+    public var provider: ProviderID { account.provider }
+
+    public init(account: Account, bucketID: String) {
+        self.account = account
         self.bucketID = bucketID
+    }
+
+    /// The default account's window.
+    public init(provider: ProviderID, bucketID: String) {
+        self.init(account: Account(provider), bucketID: bucketID)
     }
 }
 
@@ -30,7 +37,7 @@ public enum TightestLimit {
             for bucket in snapshot.buckets {
                 guard let fraction = bucket.fractionUsed, fraction >= threshold else { continue }
                 if tightest == nil || fraction > tightest!.fraction {
-                    tightest = (BucketKey(provider: snapshot.provider, bucketID: bucket.id), fraction)
+                    tightest = (BucketKey(account: snapshot.accountID, bucketID: bucket.id), fraction)
                 }
             }
         }
@@ -47,22 +54,24 @@ public enum TightestLimit {
 @MainActor
 @Observable
 public final class UsageStore {
-    public private(set) var snapshots: [ProviderID: UsageSnapshot] = [:]
+    public private(set) var snapshots: [Account: UsageSnapshot] = [:]
     public private(set) var isRefreshing = false
     /// When usable data last arrived, not when a refresh was last attempted.
     public private(set) var lastRefresh: Date?
-    public private(set) var enabledProviders: Set<ProviderID>
+    public private(set) var enabledAccounts: Set<Account>
+    /// Every account on the machine, switched on or off.
+    public private(set) var accounts: [Account]
     /// Cached so the menu does not read the key file from inside a SwiftUI body.
     public private(set) var storedKeyProviders: Set<ProviderID>
-    /// The order the menu draws providers in; the user rearranges it by dragging cards.
-    public private(set) var providerOrder: [ProviderID]
+    /// The order the menu draws accounts in; the user rearranges it by dragging cards.
+    public private(set) var order: [Account]
     /// Cached so the menu does not probe the machine from inside a SwiftUI body.
     public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
     public var refreshInterval: TimeInterval = 300
 
     /// Identifies the most recently started fetch per provider, so a slow batch cannot
     /// land on top of a newer single refresh that has already answered.
-    private var latestFetch: [ProviderID: Int] = [:]
+    private var latestFetch: [Account: Int] = [:]
     private var fetchCounter = 0
     private var refreshTask: Task<Void, Never>?
     private let settings: MeterSettings
@@ -92,28 +101,38 @@ public final class UsageStore {
         self.secrets = secrets
         self.refreshOnEnable = refreshOnEnable
         settings.migrateIfNeeded()
-        self.enabledProviders = Set(settings.enabledProviders())
+        let accounts = Account.all(in: secrets)
+        self.accounts = accounts
+        self.enabledAccounts = Set(settings.enabledAccounts(accounts))
         self.storedKeyProviders = Self.providersWithStoredKeys(secrets)
-        self.providerOrder = settings.providerOrder
+        self.order = settings.order(of: accounts)
         self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
     }
 
     public func enabled(_ provider: ProviderID) -> Bool {
-        enabledProviders.contains(provider)
+        enabled(Account(provider))
+    }
+
+    public func enabled(_ account: Account) -> Bool {
+        enabledAccounts.contains(account)
     }
 
     public func setEnabled(_ enabled: Bool, for provider: ProviderID) {
-        let wasEnabled = enabledProviders.contains(provider)
+        setEnabled(enabled, for: Account(provider))
+    }
+
+    public func setEnabled(_ enabled: Bool, for account: Account) {
+        let wasEnabled = enabledAccounts.contains(account)
         guard enabled != wasEnabled else { return }
         if enabled {
-            enabledProviders.insert(provider)
+            enabledAccounts.insert(account)
         } else {
-            enabledProviders.remove(provider)
+            enabledAccounts.remove(account)
             // Drop the data with the toggle, so the gauge stops counting it.
-            snapshots[provider] = nil
+            snapshots[account] = nil
         }
-        settings.setEnabled(enabled, for: provider)
-        if enabled && refreshOnEnable { Task { await refresh(provider) } }
+        settings.setEnabled(enabled, for: account)
+        if enabled && refreshOnEnable { Task { await refresh(account) } }
     }
 
     public func start() {
@@ -136,12 +155,12 @@ public final class UsageStore {
         // Not the order: this also runs on the five-minute timer, which can land mid-drag.
         reloadSettings(includingOrder: false)
 
-        let selected = ProviderID.allCases.filter(enabled)
+        let selected = order.filter(enabled)
         let tokens = Dictionary(uniqueKeysWithValues: selected.map { ($0, beginFetch($0)) })
         let results = await Keychain.$allowInteraction.withValue(interactive) {
             await service.fetch(selected)
         }
-        for snapshot in results { merge(snapshot, token: tokens[snapshot.provider]) }
+        for snapshot in results { merge(snapshot, token: tokens[snapshot.accountID]) }
 
         // A refresh that produced nothing usable must not advertise itself as the last
         // update; the menu would otherwise show a fresh time above stale figures.
@@ -154,15 +173,19 @@ public final class UsageStore {
     /// A drag passes `persist: false` and saves only on the drop, so a drag abandoned with
     /// Esc or released outside the menu can put the old order back without having written
     /// every card it passed over along the way.
+    public func move(_ account: Account, to target: Account, persist: Bool = true) {
+        guard account != target,
+              let from = order.firstIndex(of: account),
+              let to = order.firstIndex(of: target) else { return }
+        var moved = order
+        moved.remove(at: from)
+        moved.insert(account, at: to)
+        order = moved
+        if persist { settings.saveOrder(moved) }
+    }
+
     public func move(_ provider: ProviderID, to target: ProviderID, persist: Bool = true) {
-        guard provider != target,
-              let from = providerOrder.firstIndex(of: provider),
-              let to = providerOrder.firstIndex(of: target) else { return }
-        var order = providerOrder
-        order.remove(at: from)
-        order.insert(provider, at: to)
-        providerOrder = order
-        if persist { settings.providerOrder = order }
+        move(Account(provider), to: Account(target), persist: persist)
     }
 
     /// Takes up what the CLI or another copy of Meter changed while this one was running.
@@ -171,31 +194,37 @@ public final class UsageStore {
     /// Codex checked and kept polling it, after `meter set-key` the key field stayed up,
     /// and the next drag wrote the launch-time order back over an order saved elsewhere.
     public func reloadSettings(includingOrder: Bool) {
-        let enabledNow = Set(settings.enabledProviders())
-        if enabledNow != enabledProviders {
-            // Keep the invariant: only enabled providers have snapshots.
-            for provider in enabledProviders.subtracting(enabledNow) { snapshots[provider] = nil }
-            enabledProviders = enabledNow
+        let accountsNow = Account.all(in: secrets)
+        let accountsChanged = accountsNow != accounts
+        if accountsChanged { accounts = accountsNow }
+        let enabledNow = Set(settings.enabledAccounts(accountsNow))
+        if enabledNow != enabledAccounts {
+            // Keep the invariant: only enabled accounts have snapshots. That covers an
+            // account whose key was removed, which is no longer in the list at all.
+            for account in enabledAccounts.subtracting(enabledNow) { snapshots[account] = nil }
+            enabledAccounts = enabledNow
         }
         let keys = Self.providersWithStoredKeys(secrets)
         if keys != storedKeyProviders { storedKeyProviders = keys }
         let status = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
         if status != credentialStatus { credentialStatus = status }
-        if includingOrder {
-            let saved = settings.providerOrder
-            if saved != providerOrder { providerOrder = saved }
+        // A new or removed account changes which cards exist, so it is taken up even when
+        // the order otherwise waits for the menu to open.
+        if includingOrder || accountsChanged {
+            let saved = settings.order(of: accountsNow)
+            if saved != order { order = saved }
         }
     }
 
     /// Saves the order on screen, ending a drag that moved cards with `persist: false`.
     public func saveOrder() {
-        settings.providerOrder = providerOrder
+        settings.saveOrder(order)
     }
 
     /// Puts back an order taken before a drag that was then abandoned.
-    public func restoreOrder(_ order: [ProviderID]) {
-        guard order.count == providerOrder.count, Set(order) == Set(providerOrder) else { return }
-        providerOrder = order
+    public func restoreOrder(_ previous: [Account]) {
+        guard previous.count == order.count, Set(previous) == Set(order) else { return }
+        order = previous
     }
 
     // MARK: - Provider keys
@@ -213,7 +242,12 @@ public final class UsageStore {
     public func needsKey(_ provider: ProviderID) -> Bool {
         guard provider.acceptsStoredKey else { return false }
         if credentialStatus[provider]?.isUsable != true { return true }
-        return snapshots[provider]?.state == .unavailable
+        return snapshots[Account(provider)]?.state == .unavailable
+    }
+
+    /// Only the default account has a key field; named accounts are added with the CLI.
+    public func needsKey(_ account: Account) -> Bool {
+        account.name == nil && needsKey(account.provider)
     }
 
     /// Stores a key the user typed into the menu, then refreshes that provider.
@@ -224,25 +258,29 @@ public final class UsageStore {
         try secrets.setSecret(value, for: provider)
         storedKeyProviders = Self.providersWithStoredKeys(secrets)
         credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
-        Task { await refresh(provider) }
+        Task { await refresh(Account(provider)) }
     }
 
     /// Test seam: the emphasis rule is worth pinning without standing up a fake provider.
     func replaceSnapshotForTesting(_ snapshot: UsageSnapshot) {
-        snapshots[snapshot.provider] = snapshot
+        snapshots[snapshot.accountID] = snapshot
     }
 
     private static func providersWithStoredKeys(_ secrets: SecretStore) -> Set<ProviderID> {
         Set(ProviderID.allCases.filter { $0.acceptsStoredKey && secrets.hasSecret(for: $0) })
     }
 
-    public func refresh(_ provider: ProviderID, interactive: Bool = false) async {
-        guard enabled(provider) else { return }
-        let token = beginFetch(provider)
+    public func refresh(_ account: Account, interactive: Bool = false) async {
+        guard enabled(account) else { return }
+        let token = beginFetch(account)
         let snapshot = await Keychain.$allowInteraction.withValue(interactive) {
-            await service.fetch(provider)
+            await service.fetch(account)
         }
         merge(snapshot, token: token)
+    }
+
+    public func refresh(_ provider: ProviderID, interactive: Bool = false) async {
+        await refresh(Account(provider), interactive: interactive)
     }
 
     /// Called when the menu opens. Retries anything the background refresh could not read
@@ -251,29 +289,29 @@ public final class UsageStore {
         // The order is reloaded only here, where no drag can be under way: a drag moves
         // cards without saving, and reloading in the middle of one would undo its moves.
         reloadSettings(includingOrder: true)
-        let stale = ProviderID.allCases.filter { enabled($0) && snapshots[$0]?.state != .live }
+        let stale = order.filter { enabled($0) && snapshots[$0]?.state != .live }
         guard !stale.isEmpty else { return }
-        for provider in stale {
-            await refresh(provider, interactive: true)
+        for account in stale {
+            await refresh(account, interactive: true)
         }
     }
 
-    private func beginFetch(_ provider: ProviderID) -> Int {
+    private func beginFetch(_ account: Account) -> Int {
         fetchCounter += 1
-        latestFetch[provider] = fetchCounter
+        latestFetch[account] = fetchCounter
         return fetchCounter
     }
 
     /// Follows the order on screen, so a tie goes to the card nearer the top.
     public var tightestLimit: BucketKey? {
-        TightestLimit.find(in: providerOrder.compactMap { snapshots[$0] })
+        TightestLimit.find(in: order.compactMap { snapshots[$0] })
     }
 
     /// Every enabled provider answered and none produced data. `highestUsage` is nil for
     /// this and for "nothing enabled" alike, and the menu drew both as a zero-percent
     /// needle - a total credential failure looked like a healthy, idle account.
     public var isAllUnavailable: Bool {
-        !enabledProviders.isEmpty && enabledProviders.allSatisfy { snapshots[$0]?.buckets.isEmpty ?? false }
+        !enabledAccounts.isEmpty && enabledAccounts.allSatisfy { snapshots[$0]?.buckets.isEmpty ?? false }
     }
 
     public var highestUsage: Double? {
@@ -283,22 +321,23 @@ public final class UsageStore {
     private func merge(_ incoming: UsageSnapshot, token: Int?) {
         // Both callers suspend for up to fifteen seconds. In that window the user can switch
         // the provider off, or a newer fetch can answer first; neither result belongs here.
-        guard enabled(incoming.provider), let token, latestFetch[incoming.provider] == token else { return }
+        let account = incoming.accountID
+        guard enabled(account), let token, latestFetch[account] == token else { return }
 
         if incoming.state == .unavailable,
-           let previous = snapshots[incoming.provider],
+           let previous = snapshots[account],
            previous.state != .unavailable,
            !previous.buckets.isEmpty {
-            snapshots[incoming.provider] = .init(
+            snapshots[account] = UsageSnapshot(
                 provider: previous.provider,
                 buckets: previous.buckets,
                 fetchedAt: previous.fetchedAt,
                 source: previous.source,
                 state: .stale,
                 message: incoming.message
-            )
+            ).for(account)
         } else {
-            snapshots[incoming.provider] = incoming
+            snapshots[account] = incoming
         }
     }
 }

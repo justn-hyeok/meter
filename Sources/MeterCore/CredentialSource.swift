@@ -113,6 +113,26 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
     }
 }
 
+/// A named account's key, as stored with `meter set-key <provider> --name <name>`.
+public struct StoredKeyCredential: CredentialSource {
+    private let store: SecretStore
+    private let account: Account
+    private let signInAt: String
+
+    public init(account: Account, signInAt: String, store: SecretStore = .default) {
+        self.account = account
+        self.signInAt = signInAt
+        self.store = store
+    }
+
+    public var sourceDescription: String { "stored key for \(account.rawValue)" }
+
+    public func authHeaders() throws -> [String: String] {
+        guard let key = store.secret(for: account) else { throw CredentialError.signInRequired(signInAt) }
+        return ["Authorization": "Bearer \(key)"]
+    }
+}
+
 /// OpenCode keeps the OpenCode Go key it was connected with in its own auth file, under
 /// `opencode-go`, and the usage route the OpenCode console reads accepts that key.
 public struct OpenCodeGoCredential: CredentialSource {

@@ -118,7 +118,8 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
         service: UsageService(providers: [
             .cursor: GatedProvider(id: .cursor, gate: gate, snapshot: window(.cursor, used: 90)),
         ]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
 
     let refresh = Task { await store.refreshAll() }
@@ -150,7 +151,8 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
                 later: window(.deepSeek, used: 10)
             ),
         ]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
 
     // The timer's batch is already in the air with the old, keyless credential.
@@ -177,7 +179,8 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
             .codex: GatedProvider(id: .codex, gate: { let g = Gate(); Task { await g.open() }; return g }(),
                                   snapshot: .unavailable(.codex, "no session")),
         ]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
     for provider in ProviderID.allCases where provider != .codex {
         store.setEnabled(false, for: provider)
@@ -257,7 +260,8 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     let store = UsageStore(
         settings: settings,
         service: UsageService(providers: [:]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
 
     // Providers whose credential Meter finds on the machine are never asked for a key,
@@ -326,7 +330,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
             UsageBucket(id: "w\(index)", label: "W\(index)", used: value, limit: 100,
                         remaining: 100 - value, resetAt: nil, unit: .percent)
         }
-        let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+        let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
         store.replaceSnapshotForTesting(.init(provider: .codex, buckets: buckets,
                                               fetchedAt: .now, source: "test", state: .live, message: nil))
         return store
@@ -354,7 +358,8 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
                 later: .unavailable(.codex, "app-server timed out")
             ),
         ]),
-        refreshOnEnable: false
+        refreshOnEnable: false,
+        secrets: .forTests
     )
     await gate.open()
 
@@ -409,7 +414,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 @Test func aDraggedCardTakesThePlaceOfTheOneItPasses() async throws {
     let (settings, cleanup) = try isolatedSettingsForRegression()
     defer { cleanup() }
-    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
     #expect(store.providerOrder == [.codex, .claude, .cursor, .deepSeek, .commandCode, .openCodeGo])
 
     // Down the list: lands after the card it passed.
@@ -467,7 +472,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 @Test func anAbandonedDragLeavesTheSavedOrderAlone() async throws {
     let (settings, cleanup) = try isolatedSettingsForRegression()
     defer { cleanup() }
-    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
     let before = store.providerOrder
 
     // Passing over cards moves them on screen without writing anything.
@@ -490,7 +495,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 @Test func openingTheMenuPicksUpAnOrderSavedElsewhere() async throws {
     let (settings, cleanup) = try isolatedSettingsForRegression()
     defer { cleanup() }
-    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
 
     // Changed behind the running menu's back.
     settings.providerOrder = [.deepSeek, .codex, .claude, .cursor, .commandCode, .openCodeGo]
@@ -506,7 +511,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 @Test func settingsChangedByTheCLIReachTheRunningMenu() async throws {
     let (settings, cleanup) = try isolatedSettingsForRegression()
     defer { cleanup() }
-    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
     store.replaceSnapshotForTesting(.unavailable(.codex, "test"))
     #expect(store.enabled(.codex))
 
@@ -528,7 +533,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 @Test func restoringAnOrderWithADuplicateIsRefused() async throws {
     let (settings, cleanup) = try isolatedSettingsForRegression()
     defer { cleanup() }
-    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
     let before = store.providerOrder
     store.restoreOrder([.codex, .codex, .claude, .cursor, .deepSeek, .commandCode])
     #expect(store.providerOrder == before)
