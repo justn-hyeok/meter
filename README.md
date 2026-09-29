@@ -35,7 +35,7 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 ## Install
 
-Download `Meter-0.4.1-macos-universal-app.zip` from the [v0.4.1 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.1), extract it, and move `Meter.app` to `/Applications`.
+Download `Meter-0.4.2-macos-universal-app.zip` from the [v0.4.2 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.2), extract it, and move `Meter.app` to `/Applications`.
 
 The release is signed with a development certificate but is not notarized, so another Mac will still block the first launch: Control-click `Meter.app` in Finder, choose **Open**, and confirm once. Building it yourself avoids that, and is what keeps macOS from re-asking for keychain permission - see [Signing](#signing).
 
@@ -154,7 +154,7 @@ With no provider argument, `meter` queries the providers enabled in the shared s
 
 The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`.
 
-The v0.4.1 release also includes `meter-0.4.1-macos-universal-cli.zip`. Extract it and move `meter` to a directory on your `PATH`, or build and install it into `~/.local/bin` from this checkout:
+The v0.4.2 release also includes `meter-0.4.2-macos-universal-cli.zip`. Extract it and move `meter` to a directory on your `PATH`, or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh
