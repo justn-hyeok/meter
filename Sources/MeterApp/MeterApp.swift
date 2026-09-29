@@ -10,9 +10,11 @@ struct MeterApp: App {
         MenuBarExtra {
             MeterMenu(store: store)
         } label: {
-            // The number beside the needle is the whole point: most checks are "am I near a
-            // limit", and answering that in the menu bar means never opening the menu.
-            MenuBarLabel(icon: icon, headline: headline)
+            // Back to the one form that actually paints. MenuBarExtra reserves space for an
+            // arbitrary label view without drawing it, and Text(Image(systemName:)) drew the
+            // number but not the symbol - the menu bar was left showing a bare "100%" next to
+            // the battery's own, which reads as no Meter at all.
+            Label("Meter", systemImage: icon)
                 .task {
                     store.onAlerts = { Notifier.post($0) }
                     Notifier.requestAuthorization()
@@ -22,33 +24,12 @@ struct MeterApp: App {
         .menuBarExtraStyle(.window)
     }
 
-    /// The tightest limit, as a whole percent. Nil when nothing measurable is known, which
-    /// is not the same as zero.
-    private var headline: String? {
-        guard !store.isAllUnavailable, let usage = store.highestUsage else { return nil }
-        return String(format: "%.0f%%", usage * 100)
-    }
-
     private var icon: String {
         if store.isAllUnavailable { return "exclamationmark.triangle" }
         guard let usage = store.highestUsage else { return "gauge.with.dots.needle.0percent" }
         if usage >= 0.95 { return "gauge.with.dots.needle.100percent" }
         if usage >= 0.8 { return "gauge.with.dots.needle.67percent" }
         return "gauge.with.dots.needle.33percent"
-    }
-}
-
-private struct MenuBarLabel: View {
-    let icon: String
-    let headline: String?
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-            if let headline {
-                Text(headline).font(.system(size: 11, weight: .medium).monospacedDigit())
-            }
-        }
     }
 }
 
@@ -67,7 +48,7 @@ private struct MeterMenu: View {
             .padding(14)
 
             Divider()
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 ForEach(ProviderID.allCases) { provider in
                     ProviderCard(provider: provider, store: store)
                 }
@@ -183,7 +164,7 @@ private struct ProviderCard: View {
     @Bindable var store: UsageStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(provider.title).font(.subheadline.weight(.semibold))
                 Spacer()
@@ -192,15 +173,7 @@ private struct ProviderCard: View {
             }
             if store.enabled(provider) {
                 if let snapshot = store.snapshots[provider], !snapshot.buckets.isEmpty {
-                    let columns = snapshot.buckets.filter { $0.fractionUsed != nil }
-                    let lines = snapshot.buckets.filter { $0.fractionUsed == nil }
-                    if !columns.isEmpty {
-                        HStack(alignment: .bottom, spacing: 4) {
-                            ForEach(columns) { UsageColumn(bucket: $0) }
-                            Spacer(minLength: 0)
-                        }
-                    }
-                    ForEach(lines) { UsageLine(bucket: $0) }
+                    ForEach(snapshot.buckets) { UsageRow(bucket: $0) }
                 } else {
                     Text(store.snapshots[provider]?.message ?? "Waiting for refresh…")
                         .font(.caption).foregroundStyle(.secondary)
@@ -215,77 +188,67 @@ private struct ProviderCard: View {
     }
 }
 
-/// One usage window as a vertical column: orange for what is spent, blue for what is
-/// left, growing from a baseline at the bottom.
+/// One usage window on one line: label, bar, figure, reset.
 ///
-/// Columns side by side make the comparison the list could not: the tallest orange is the
-/// limit that will bite first, without reading a single number. The pair is the palette's
-/// dark categorical slots 1 and 2, which clear CVD separation (ΔE 26.8 protan) and 3:1
-/// contrast against this surface.
-private struct UsageColumn: View {
+/// The bar is inline rather than on a row of its own, which halves the menu without hiding
+/// anything. Every bar starts at the same left edge and is the same width, so reading down
+/// the column shows which limit is tightest without reading a single number - the
+/// comparison a row of vertical columns would have given, except the labels survive.
+private struct UsageRow: View {
     let bucket: UsageBucket
 
-    private let height: CGFloat = 44
-    private let width: CGFloat = 14
-    /// A gap in the surface colour, not a stroke, is what separates the two segments.
-    private let segmentGap: CGFloat = 2
-
     var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 3) {
-                Text(UsageFormat.value(bucket))
-                if let reset = UsageFormat.reset(bucket) {
-                    Text(reset).foregroundStyle(.secondary)
-                }
-            }
-            .font(.caption2.monospacedDigit())
-            column
+        HStack(spacing: 8) {
             Text(bucket.label)
-                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-        }
-        .frame(width: 64)
-        .help(UsageFormat.detail(bucket))
-    }
+                .frame(width: 112, alignment: .leading)
 
-    private var column: some View {
-        VStack(spacing: 0) {
-            if let fraction = bucket.fractionUsed {
-                let used = min(max(fraction, 0), 1)
-                let needsGap = used > 0.001 && used < 0.999
-                let drawable = height - (needsGap ? segmentGap : 0)
-                Rectangle().fill(MeterPalette.remaining)
-                    .frame(height: drawable * (1 - used))
-                if needsGap { Color.clear.frame(height: segmentGap) }
-                Rectangle().fill(MeterPalette.used)
-                    .frame(height: drawable * used)
-            } else {
-                // No limit to divide by, so the column would be a lie; keep the slot quiet.
-                Rectangle().fill(MeterPalette.remaining.opacity(0.2))
-                    .frame(height: height)
-            }
+            UsageBar(fraction: bucket.fractionUsed)
+
+            Text(UsageFormat.value(bucket))
+                .monospacedDigit()
+                .frame(width: 46, alignment: .trailing)
+
+            Text(UsageFormat.reset(bucket) ?? "")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 26, alignment: .trailing)
         }
-        .frame(width: width, height: height)
-        // Rounded at the data end, square where it meets the baseline.
-        .clipShape(.rect(topLeadingRadius: 4, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 4))
+        .font(.caption)
+        .help(UsageFormat.detail(bucket))
     }
 }
 
-/// A bucket with no limit to divide by - a balance, a running total - reads as a line.
-private struct UsageLine: View {
-    let bucket: UsageBucket
+/// Orange for what is spent, blue for what is left, filling from the left.
+///
+/// The pair is the validated categorical slots 1 and 2: CVD separation deltaE 26.8 (protan),
+/// normal-vision deltaE 31.8, both clearing 3:1 against this surface.
+private struct UsageBar: View {
+    let fraction: Double?
+
+    private let segmentGap: CGFloat = 2
 
     var body: some View {
-        HStack {
-            Text(bucket.label).font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Text(UsageFormat.value(bucket)).font(.caption.monospacedDigit())
-            if let reset = UsageFormat.reset(bucket) {
-                Text(reset).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            if let fraction {
+                let used = min(max(fraction, 0), 1)
+                let needsGap = used > 0.001 && used < 0.999
+                let drawable = width - (needsGap ? segmentGap : 0)
+                HStack(spacing: 0) {
+                    Rectangle().fill(MeterPalette.used).frame(width: drawable * used)
+                    if needsGap { Color.clear.frame(width: segmentGap) }
+                    Rectangle().fill(MeterPalette.remaining).frame(width: drawable * (1 - used))
+                }
+            } else {
+                // Nothing to divide by, so a filled bar would be a lie.
+                Rectangle().fill(MeterPalette.remaining.opacity(0.18))
             }
         }
+        .frame(height: 6)
+        .clipShape(.rect(cornerRadius: 3))
     }
 }
 
