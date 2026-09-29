@@ -35,6 +35,7 @@ struct MeterApp: App {
 
 private struct MeterMenu: View {
     @Bindable var store: UsageStore
+    @State private var dragging: ProviderID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,8 +50,15 @@ private struct MeterMenu: View {
 
             Divider()
             VStack(spacing: 8) {
-                ForEach(ProviderID.allCases) { provider in
+                ForEach(store.providerOrder) { provider in
                     ProviderCard(provider: provider, store: store)
+                        // Drag a card by any part of it; the others make room as it passes
+                        // over them, and the order is saved for the menu and the CLI alike.
+                        .onDrag {
+                            dragging = provider
+                            return NSItemProvider(object: provider.rawValue as NSString)
+                        }
+                        .onDrop(of: [.text], delegate: CardReorder(target: provider, dragging: $dragging, store: store))
                 }
             }
             .padding(12)
@@ -72,6 +80,28 @@ private struct MeterMenu: View {
         // Opening the menu is the moment a keychain dialog is welcome; the five-minute
         // refresh never raises one.
         .task { await store.menuOpened() }
+    }
+}
+
+/// Reorders live while a card is dragged over another, so the list shows the result
+/// before the drop rather than jumping after it.
+private struct CardReorder: DropDelegate {
+    let target: ProviderID
+    @Binding var dragging: ProviderID?
+    let store: UsageStore
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target else { return }
+        withAnimation(.snappy(duration: 0.2)) { store.move(dragging, to: target) }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
     }
 }
 

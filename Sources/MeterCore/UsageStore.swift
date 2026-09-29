@@ -28,6 +28,8 @@ public final class UsageStore {
     public private(set) var enabledProviders: Set<ProviderID>
     /// Cached so the menu does not read the key file from inside a SwiftUI body.
     public private(set) var storedKeyProviders: Set<ProviderID>
+    /// The order the menu draws providers in; the user rearranges it by dragging cards.
+    public private(set) var providerOrder: [ProviderID]
     /// Cached so the menu does not probe the machine from inside a SwiftUI body.
     public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
     public var refreshInterval: TimeInterval = 300
@@ -66,6 +68,7 @@ public final class UsageStore {
         settings.migrateIfNeeded()
         self.enabledProviders = Set(settings.enabledProviders())
         self.storedKeyProviders = Self.providersWithStoredKeys(secrets)
+        self.providerOrder = settings.providerOrder
         self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
     }
 
@@ -115,6 +118,19 @@ public final class UsageStore {
         // A refresh that produced nothing usable must not advertise itself as the last
         // update; the menu would otherwise show a fresh time above stale figures.
         if results.contains(where: { $0.state == .live }) { lastRefresh = .now }
+    }
+
+    /// Moves `provider` into `target`'s place: after it when moving down the list, before it
+    /// when moving up - which is where a dragged card lands when it passes over another.
+    public func move(_ provider: ProviderID, to target: ProviderID) {
+        guard provider != target,
+              let from = providerOrder.firstIndex(of: provider),
+              let to = providerOrder.firstIndex(of: target) else { return }
+        var order = providerOrder
+        order.remove(at: from)
+        order.insert(provider, at: to)
+        providerOrder = order
+        settings.providerOrder = order
     }
 
     // MARK: - Provider keys

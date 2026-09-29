@@ -32,8 +32,10 @@ public struct UsageService: Sendable {
             return result
         }
 
-        return ProviderID.allCases
-            .filter { selected.contains($0) }
+        // In the order asked for, so a caller that arranged the providers keeps that order.
+        var seen = Set<ProviderID>()
+        return selectedProviders
+            .filter { selected.contains($0) && seen.insert($0).inserted }
             .compactMap { snapshots[$0] }
     }
 

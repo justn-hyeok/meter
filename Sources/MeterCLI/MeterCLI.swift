@@ -12,7 +12,7 @@ struct CLIResult {
 }
 
 struct MeterCLIApplication {
-    static let version = "0.4.15"
+    static let version = "0.4.16"
 
     let service: UsageService
     let settings: MeterSettings
@@ -127,7 +127,11 @@ struct MeterCLIApplication {
     }
 
     private func status(_ explicitProviders: [ProviderID]?, json: Bool, strict: Bool) async -> CLIResult {
-        let selected = explicitProviders ?? settings.enabledProviders()
+        // Named providers keep the order they were typed in; everything else follows the order
+        // arranged in the menu, including `all`.
+        let selected = explicitProviders == ProviderID.allCases
+            ? settings.providerOrder
+            : explicitProviders ?? settings.enabledProviders()
         guard !selected.isEmpty else {
             return .init(
                 standardOutput: "",

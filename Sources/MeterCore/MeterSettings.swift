@@ -18,7 +18,24 @@ public struct MeterSettings {
     }
 
     public func enabledProviders() -> [ProviderID] {
-        ProviderID.allCases.filter(enabled)
+        providerOrder.filter(enabled)
+    }
+
+    private static let orderKey = "providers.order"
+
+    /// The order the user arranged the providers in, shared by the menu and the CLI.
+    ///
+    /// Unknown names are dropped and duplicates kept once, and a provider added in a later
+    /// version joins at the end rather than vanishing because the saved list predates it.
+    public var providerOrder: [ProviderID] {
+        get {
+            var seen = Set<ProviderID>()
+            let saved = (defaults.stringArray(forKey: Self.orderKey) ?? [])
+                .compactMap(ProviderID.init(rawValue:))
+                .filter { seen.insert($0).inserted }
+            return saved + ProviderID.allCases.filter { !seen.contains($0) }
+        }
+        nonmutating set { defaults.set(newValue.map(\.rawValue), forKey: Self.orderKey) }
     }
 
     public func setEnabled(_ enabled: Bool, for provider: ProviderID) {
