@@ -20,11 +20,14 @@ fi
 
 temporary_dir=$(mktemp -d "$dist_dir/.meter-release.XXXXXX")
 trap 'rm -rf "$temporary_dir"' EXIT HUP INT TERM
+mkdir "$temporary_dir/cli"
+cp "$dist_dir/meter" "$temporary_dir/cli/meter"
+cp "$project_dir/LICENSE" "$temporary_dir/cli/LICENSE"
 
 (
     cd "$dist_dir"
     COPYFILE_DISABLE=1 ditto -c -k --keepParent --norsrc --noextattr Meter.app "$temporary_dir/$(basename "$app_archive")"
-    COPYFILE_DISABLE=1 ditto -c -k --norsrc --noextattr meter "$temporary_dir/$(basename "$cli_archive")"
+    COPYFILE_DISABLE=1 ditto -c -k --norsrc --noextattr "$temporary_dir/cli" "$temporary_dir/$(basename "$cli_archive")"
 )
 mv "$temporary_dir/$(basename "$app_archive")" "$app_archive"
 mv "$temporary_dir/$(basename "$cli_archive")" "$cli_archive"
@@ -37,6 +40,14 @@ unzip -l "$app_archive" | grep -q "Meter.app/Contents/MacOS/MeterApp" || {
 }
 unzip -l "$cli_archive" | grep -qE " meter$" || {
     echo "error: $cli_archive does not contain the CLI binary" >&2
+    exit 1
+}
+cmp "$project_dir/LICENSE" "$dist_dir/Meter.app/Contents/Resources/LICENSE" || {
+    echo "error: app bundle license does not match LICENSE" >&2
+    exit 1
+}
+unzip -p "$cli_archive" LICENSE | cmp - "$project_dir/LICENSE" || {
+    echo "error: CLI archive license does not match LICENSE" >&2
     exit 1
 }
 

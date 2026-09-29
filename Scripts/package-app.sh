@@ -22,6 +22,7 @@ mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
 lipo -create "$arm_build_dir/MeterApp" "$intel_build_dir/MeterApp" -output "$contents_dir/MacOS/MeterApp"
 cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
 cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
+cp "$project_dir/LICENSE" "$contents_dir/Resources/LICENSE"
 
 chmod 755 "$contents_dir/MacOS/MeterApp"
 plutil -lint "$contents_dir/Info.plist"
