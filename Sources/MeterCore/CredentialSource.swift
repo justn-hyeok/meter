@@ -76,13 +76,19 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
         store.hasSecret(for: .claude) ? "stored Claude token" : "keychain \(Self.keychainService)"
     }
 
-    public func invalidate() { Keychain.forget(service: Self.keychainService) }
+    /// A stored token the service refuses is worse than no stored token at all, because it
+    /// takes precedence and would leave Claude quietly broken. `claude setup-token` issues
+    /// one the usage endpoint answers 403 to - its scope does not include the account read -
+    /// so dropping a rejected token is what puts collection back on the keychain by itself.
+    public func invalidate() {
+        try? store.setSecret(nil, for: .claude)
+        Keychain.forget(service: Self.keychainService)
+    }
 
-    /// A token from `claude setup-token` is preferred because reading it never touches the
-    /// keychain. That matters: Claude Code rewrites its keychain item every few hours when
-    /// it refreshes the session, and the rewrite discards the permission macOS recorded for
-    /// Meter, so the keychain path asks the user again about three times a day no matter how
-    /// often they choose "Always Allow". The long-lived token does not rotate.
+    /// A token stored in Meter is preferred because reading it never touches the keychain,
+    /// which is what makes macOS ask for permission again every time Claude Code rotates its
+    /// session. Note that `claude setup-token` is not a source for one: that token is scoped
+    /// for inference and the account usage endpoint refuses it.
     public func token() throws -> String {
         if let stored = store.secret(for: .claude) { return stored }
 

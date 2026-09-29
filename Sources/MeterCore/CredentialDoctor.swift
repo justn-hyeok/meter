@@ -113,12 +113,12 @@ public enum CredentialDoctor {
     private static func claude(_ machine: DiagnosticEnvironment) -> CredentialStatus {
         if machine.secrets.hasSecret(for: .claude) {
             return .init(provider: .claude, source: "stored Claude token", availability: .ready,
-                         detail: "long-lived token; the keychain is never read")
+                         detail: "stored token in use; the keychain is not read")
         }
         let keychain = keychainBacked(
             .claude,
             ClaudeSubscriptionCredential.keychainService,
-            missing: "run 'claude setup-token', then 'meter set-key claude'",
+            missing: "run 'claude' and sign in",
             machine
         )
         guard keychain.availability == .ready else { return keychain }
@@ -126,7 +126,7 @@ public enum CredentialDoctor {
             provider: .claude,
             source: keychain.source,
             availability: .ready,
-            detail: "present, but Claude Code rotates it - run 'claude setup-token' to stop the prompts"
+            detail: "present; macOS re-asks each time Claude Code rotates the session"
         )
     }
 

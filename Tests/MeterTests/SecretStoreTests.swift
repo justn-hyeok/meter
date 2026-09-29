@@ -171,3 +171,21 @@ private func temporaryAuthFile(_ contents: String?) -> (URL, () -> Void) {
         "anthropic-beta": "oauth-2025-04-20",
     ])
 }
+
+@Test func aRejectedClaudeTokenIsDroppedSoCollectionFallsBackToTheKeychain() throws {
+    let (store, _, cleanup) = temporaryStore()
+    defer { cleanup() }
+
+    // `claude setup-token` issues a token the usage endpoint answers 403 to, and a stored
+    // token takes precedence, so keeping it would leave Claude broken with doctor still
+    // reporting ready.
+    try store.setSecret("wrong-scope-token", for: .claude)
+    let credential = ClaudeSubscriptionCredential(store: store) {
+        #"{"claudeAiOauth":{"accessToken":"session-token"}}"#
+    }
+    #expect(try credential.token() == "wrong-scope-token")
+
+    credential.invalidate()
+    #expect(store.secret(for: .claude) == nil)
+    #expect(try credential.token() == "session-token")
+}
