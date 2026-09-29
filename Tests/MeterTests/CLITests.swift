@@ -110,11 +110,12 @@ private struct StubProvider: UsageProvider {
     #expect(throws: CLIArgumentError.providerTakesNoKey(.codex)) {
         try CLIArgumentParser.parse(["set-key", "codex"])
     }
+    #expect(try CLIArgumentParser.parse(["set-key", "claude"]).command == .setKey(.claude))
 }
 
 @Test func recognisesClaudeAsAProvider() throws {
     #expect(try CLIArgumentParser.parse(["claude"]).command == .status([.claude]))
     #expect(ProviderID.allCases.contains(.claude))
-    #expect(ProviderID.claude.acceptsStoredKey == false)
+    #expect(ProviderID.claude.acceptsStoredKey)
     #expect(ProviderID.deepSeek.acceptsStoredKey)
 }

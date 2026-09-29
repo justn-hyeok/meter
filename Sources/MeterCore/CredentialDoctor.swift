@@ -73,7 +73,7 @@ public enum CredentialDoctor {
     private static func status(for provider: ProviderID, in machine: DiagnosticEnvironment) -> CredentialStatus {
         switch provider {
         case .codex: codex(machine)
-        case .claude: keychainBacked(.claude, ClaudeSubscriptionCredential.keychainService, missing: "run 'claude' and sign in", machine)
+        case .claude: claude(machine)
         case .cursor: keychainBacked(.cursor, CursorSessionCredential.keychainService, missing: "sign in to the Cursor app", machine)
         case .deepSeek: apiKeyBacked(.deepSeek, DeepSeekUsageProvider.environmentKey, stored: true, cliFile: nil, machine)
         case .commandCode: apiKeyBacked(
@@ -106,6 +106,28 @@ public enum CredentialDoctor {
             return .init(provider: .codex, source: "Codex app-server or auth file", availability: .missing,
                          detail: "run 'codex login'")
         }
+    }
+
+    /// Prefers a token stored in Meter, because the keychain path re-prompts every time
+    /// Claude Code refreshes its session - roughly three times a day.
+    private static func claude(_ machine: DiagnosticEnvironment) -> CredentialStatus {
+        if machine.secrets.hasSecret(for: .claude) {
+            return .init(provider: .claude, source: "stored Claude token", availability: .ready,
+                         detail: "long-lived token; the keychain is never read")
+        }
+        let keychain = keychainBacked(
+            .claude,
+            ClaudeSubscriptionCredential.keychainService,
+            missing: "run 'claude setup-token', then 'meter set-key claude'",
+            machine
+        )
+        guard keychain.availability == .ready else { return keychain }
+        return .init(
+            provider: .claude,
+            source: keychain.source,
+            availability: .ready,
+            detail: "present, but Claude Code rotates it - run 'claude setup-token' to stop the prompts"
+        )
     }
 
     private static func keychainBacked(

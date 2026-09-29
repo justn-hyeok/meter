@@ -60,21 +60,32 @@ public struct CursorSessionCredential: CredentialSource {
 public struct ClaudeSubscriptionCredential: CredentialSource {
     public static let keychainService = "Claude Code-credentials"
 
+    private let store: SecretStore
     private let readCredentials: @Sendable () throws -> String
 
-    public init() {
-        self.init(readCredentials: { try Keychain.genericPassword(service: Self.keychainService) })
+    public init(store: SecretStore = .default) {
+        self.init(store: store, readCredentials: { try Keychain.genericPassword(service: Self.keychainService) })
     }
 
-    init(readCredentials: @escaping @Sendable () throws -> String) {
+    init(store: SecretStore = .default, readCredentials: @escaping @Sendable () throws -> String) {
+        self.store = store
         self.readCredentials = readCredentials
     }
 
-    public var sourceDescription: String { "keychain \(Self.keychainService)" }
+    public var sourceDescription: String {
+        store.hasSecret(for: .claude) ? "stored Claude token" : "keychain \(Self.keychainService)"
+    }
 
     public func invalidate() { Keychain.forget(service: Self.keychainService) }
 
-    public func authHeaders() throws -> [String: String] {
+    /// A token from `claude setup-token` is preferred because reading it never touches the
+    /// keychain. That matters: Claude Code rewrites its keychain item every few hours when
+    /// it refreshes the session, and the rewrite discards the permission macOS recorded for
+    /// Meter, so the keychain path asks the user again about three times a day no matter how
+    /// often they choose "Always Allow". The long-lived token does not rotate.
+    public func token() throws -> String {
+        if let stored = store.secret(for: .claude) { return stored }
+
         let payload = try readCredentials()
         guard let root = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
               let oauth = root["claudeAiOauth"] as? [String: Any],
@@ -82,8 +93,12 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
               !token.isEmpty else {
             throw CredentialError.signInRequired("claude.ai")
         }
-        return [
-            "Authorization": "Bearer \(token)",
+        return token
+    }
+
+    public func authHeaders() throws -> [String: String] {
+        [
+            "Authorization": "Bearer \(try token())",
             "anthropic-beta": "oauth-2025-04-20",
         ]
     }

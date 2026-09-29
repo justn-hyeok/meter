@@ -138,8 +138,36 @@ private func temporaryAuthFile(_ contents: String?) -> (URL, () -> Void) {
 @Test func everyProviderThatCanStoreAKeyIsOfferedByTheCLI() {
     #expect(ProviderID.deepSeek.acceptsStoredKey)
     #expect(ProviderID.commandCode.acceptsStoredKey)
-    // The rest have credentials Meter finds on the machine.
+    // Claude accepts one too: `claude setup-token` issues a long-lived token that avoids
+    // the keychain, whose permission Claude Code discards every time it rotates its session.
+    #expect(ProviderID.claude.acceptsStoredKey)
+    // These two have only a credential Meter finds on the machine.
     #expect(!ProviderID.codex.acceptsStoredKey)
-    #expect(!ProviderID.claude.acceptsStoredKey)
     #expect(!ProviderID.cursor.acceptsStoredKey)
+}
+
+@Test func claudePrefersAStoredTokenOverTheKeychain() throws {
+    let (store, _, cleanup) = temporaryStore()
+    defer { cleanup() }
+
+    // Claude Code rewrites its keychain item every few hours and the rewrite discards the
+    // permission macOS recorded for Meter, so the keychain path re-prompts about three
+    // times a day. A token from `claude setup-token` is read from Meter's own file instead.
+    let fromKeychain = ClaudeSubscriptionCredential(store: store) {
+        #"{"claudeAiOauth":{"accessToken":"rotating-token"}}"#
+    }
+    #expect(try fromKeychain.token() == "rotating-token")
+    #expect(fromKeychain.sourceDescription == "keychain Claude Code-credentials")
+
+    try store.setSecret("long-lived-token", for: .claude)
+    let stored = ClaudeSubscriptionCredential(store: store) {
+        Issue.record("the keychain must not be read once a token is stored")
+        return "{}"
+    }
+    #expect(try stored.token() == "long-lived-token")
+    #expect(stored.sourceDescription == "stored Claude token")
+    #expect(try stored.authHeaders() == [
+        "Authorization": "Bearer long-lived-token",
+        "anthropic-beta": "oauth-2025-04-20",
+    ])
 }
