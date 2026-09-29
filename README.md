@@ -2,7 +2,7 @@
 
 [한국어](README.ko.md)
 
-Meter is a private macOS menu bar app and CLI that keeps usage and quota information for Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, and OpenCode Go in one place.
+Meter is a macOS menu bar app and CLI that keeps usage and quota information for Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, and OpenCode Go in one place.
 
 ## Features
 
@@ -256,4 +256,4 @@ Optional executable overrides:
 
 ## License
 
-Private project. No public license is granted.
+The repository is public, but no software reuse license has been selected yet.

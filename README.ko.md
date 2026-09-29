@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 사용량과 한도를 한곳에서 확인하는 비공개 macOS 메뉴바 앱 및 CLI입니다.
+Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 사용량과 한도를 한곳에서 확인하는 macOS 메뉴바 앱 및 CLI입니다.
 
 ## 주요 기능
 
@@ -256,4 +256,4 @@ GitHub 릴리즈용 버전 지정 앱 및 universal CLI 압축 파일을 함께 
 
 ## 라이선스
 
-비공개 프로젝트이며 공개 라이선스를 부여하지 않습니다.
+저장소는 공개되어 있지만, 소프트웨어 재사용을 허용하는 라이선스는 아직 지정하지 않았습니다.
