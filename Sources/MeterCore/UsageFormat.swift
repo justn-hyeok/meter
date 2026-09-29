@@ -14,9 +14,23 @@ public enum UsageFormat {
             }
             if let used = bucket.used { return String(format: "$%.2f", used) }
         }
-        if let remaining = bucket.remaining { return "\(String(format: "%.2f", remaining)) \(bucket.unit.rawValue)" }
-        if let used = bucket.used { return "\(String(format: "%.2f", used)) \(bucket.unit.rawValue) used" }
+        if let remaining = bucket.remaining { return "\(number(remaining)) \(bucket.unit.rawValue)" }
+        if let used = bucket.used { return "\(number(used)) \(bucket.unit.rawValue) used" }
         return "—"
+    }
+
+    /// Two decimals only when they say something. "0.00 credits" spends three characters
+    /// insisting on a precision the value does not have, and it was enough to wrap the row.
+    static func number(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 2
+        // NumberFormatter rounds half to even by default, so a balance of 64.725 would
+        // display as 64.72. Money-shaped figures are expected to round up on a tie.
+        formatter.roundingMode = .halfUp
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
     /// How long until the window clears, in the shortest form that is still exact enough to

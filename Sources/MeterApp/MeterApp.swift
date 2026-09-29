@@ -115,7 +115,9 @@ private struct SettingsRows: View {
                 Text(loginItemFailure).foregroundStyle(.red)
             }
         }
-        .toggleStyle(.switch)
+        // Checkboxes here too: the provider rows stopped using blue switches so the bars
+        // could own blue, and leaving these as switches made them the brightest thing left.
+        .toggleStyle(.checkbox)
         .controlSize(.small)
         .font(.callout)
         .padding(.horizontal, 12)
@@ -235,14 +237,16 @@ private struct UsageRow: View {
                 .foregroundStyle(isTightest ? .primary : .secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(width: 124, alignment: .leading)
+                .frame(width: 110, alignment: .leading)
 
             UsageBar(fraction: bucket.fractionUsed)
 
             Text(UsageFormat.value(bucket))
                 .monospacedDigit()
                 .fontWeight(isTightest ? .semibold : .regular)
-                .frame(width: 54, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(width: 88, alignment: .trailing)
 
             Text(UsageFormat.reset(bucket) ?? "—")
                 .monospacedDigit()
