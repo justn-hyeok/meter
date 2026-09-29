@@ -22,6 +22,8 @@ public enum UsageFormat {
     /// How long until the window clears, in the shortest form that is still exact enough to
     /// act on. A percentage without this is not a decision: 92% with five days left is
     /// trouble and 92% with two hours left is nothing.
+    /// Returns nil only when the provider reports no reset at all. A blank column reads as
+    /// a rendering fault next to neighbours that have one, so callers show an em dash.
     public static func reset(_ bucket: UsageBucket, now: Date = .now) -> String? {
         guard let resetAt = bucket.resetAt else { return nil }
         let seconds = Int(resetAt.timeIntervalSince(now))

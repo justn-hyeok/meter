@@ -164,14 +164,9 @@ private struct ProviderCard: View {
     @Bindable var store: UsageStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(provider.title).font(.subheadline.weight(.semibold))
-                Spacer()
-                Toggle("", isOn: Binding(get: { store.enabled(provider) }, set: { store.setEnabled($0, for: provider) }))
-                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
-            }
-            if store.enabled(provider) {
+        if store.enabled(provider) {
+            VStack(alignment: .leading, spacing: 5) {
+                header
                 if let snapshot = store.snapshots[provider], !snapshot.buckets.isEmpty {
                     ForEach(snapshot.buckets) { UsageRow(bucket: $0) }
                 } else {
@@ -182,9 +177,24 @@ private struct ProviderCard: View {
                     KeyField(provider: provider, store: store)
                 }
             }
+            .padding(12)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        } else {
+            // A provider that is switched off has nothing to show, so it does not get a card
+            // to show it in - just the row you turn it back on from.
+            header.padding(.horizontal, 12)
         }
-        .padding(12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var header: some View {
+        HStack {
+            Text(provider.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(store.enabled(provider) ? .primary : .secondary)
+            Spacer()
+            Toggle("", isOn: Binding(get: { store.enabled(provider) }, set: { store.setEnabled($0, for: provider) }))
+                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+        }
     }
 }
 
@@ -211,7 +221,7 @@ private struct UsageRow: View {
                 .monospacedDigit()
                 .frame(width: 46, alignment: .trailing)
 
-            Text(UsageFormat.reset(bucket) ?? "")
+            Text(UsageFormat.reset(bucket) ?? "—")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 26, alignment: .trailing)
