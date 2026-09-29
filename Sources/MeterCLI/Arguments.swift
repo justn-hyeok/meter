@@ -24,6 +24,8 @@ enum ProviderSelection: Equatable {
 
 enum CLICommand: Equatable {
     case status(ProviderSelection)
+    case watch(ProviderSelection)
+    case cacheStatus
     case doctor
     case providers
     case enable([AccountTarget])
@@ -38,6 +40,24 @@ struct CLIOptions: Equatable {
     let command: CLICommand
     let json: Bool
     let strict: Bool
+    let short: Bool
+    let allWindows: Bool
+    let refresh: Bool
+    let showReset: Bool
+    let maximumAge: TimeInterval?
+
+    init(command: CLICommand, json: Bool, strict: Bool, short: Bool = false,
+         allWindows: Bool = false, refresh: Bool = false, showReset: Bool = false,
+         maximumAge: TimeInterval? = nil) {
+        self.command = command
+        self.json = json
+        self.strict = strict
+        self.short = short
+        self.allWindows = allWindows
+        self.refresh = refresh
+        self.showReset = showReset
+        self.maximumAge = maximumAge
+    }
 }
 
 enum CLIArgumentError: LocalizedError, Equatable {
@@ -51,6 +71,8 @@ enum CLIArgumentError: LocalizedError, Equatable {
     case providerTakesNoNamedAccounts(ProviderID)
     case invalidAccountName(String)
     case missingAccountName
+    case missingMaximumAge
+    case invalidMaximumAge(String)
     case nameOnlyForKeys
     case conflictingAccountName(Account, String)
 
@@ -74,12 +96,16 @@ enum CLIArgumentError: LocalizedError, Equatable {
             "Invalid account name '\(name)': use up to 20 letters, digits, '-', '_' or '.', not starting with '-'"
         case .missingAccountName:
             "--name needs a value"
+        case .missingMaximumAge:
+            "--max-age needs a duration such as 30s, 10m, 2h or 1d"
+        case .invalidMaximumAge(let value):
+            "Invalid --max-age '\(value)': use a positive duration up to 7d (s, m, h or d)"
         case .nameOnlyForKeys:
             "--name is only valid for set-key and clear-key"
         case .conflictingAccountName(let account, let name):
             "\(account.rawValue) already names an account; drop --name \(name), or write \(account.provider.rawValue) --name \(name)"
         case .statusOnlyOption:
-            "The --json and --strict options are only valid for status and doctor queries"
+            "These options are valid for status; watch accepts all except --json, and doctor accepts --json and --strict"
         }
     }
 }
@@ -88,6 +114,11 @@ enum CLIArgumentParser {
     static func parse(_ arguments: [String]) throws -> CLIOptions {
         var json = false
         var strict = false
+        var short = false
+        var allWindows = false
+        var refresh = false
+        var showReset = false
+        var maximumAge: TimeInterval?
         var name: String?
         var positional: [String] = []
 
@@ -105,9 +136,23 @@ enum CLIArgumentParser {
                 name = String(argument.dropFirst("--name=".count))
                 continue
             }
+            if argument == "--max-age" {
+                guard index < arguments.count else { throw CLIArgumentError.missingMaximumAge }
+                maximumAge = try parseMaximumAge(arguments[index])
+                index += 1
+                continue
+            }
+            if argument.hasPrefix("--max-age=") {
+                maximumAge = try parseMaximumAge(String(argument.dropFirst("--max-age=".count)))
+                continue
+            }
             switch argument {
             case "--json": json = true
             case "--strict": strict = true
+            case "--short": short = true
+            case "--all-windows": allWindows = true
+            case "--refresh": refresh = true
+            case "--show-reset": showReset = true
             case "--help", "-h": return .init(command: .help, json: false, strict: false)
             case "--version", "-V": return .init(command: .version, json: false, strict: false)
             default:
@@ -118,7 +163,8 @@ enum CLIArgumentParser {
 
         guard let first = positional.first else {
             if name != nil { throw CLIArgumentError.nameOnlyForKeys }
-            return .init(command: .status(.enabled), json: json, strict: strict)
+            guard !(json && short), (!allWindows && !showReset) || short else { throw CLIArgumentError.unknownOption("--short/--json or --all-windows/--show-reset without --short") }
+            return .init(command: .status(.enabled), json: json, strict: strict, short: short, allWindows: allWindows, refresh: refresh, showReset: showReset, maximumAge: maximumAge)
         }
         if name != nil, first != "set-key", first != "clear-key" { throw CLIArgumentError.nameOnlyForKeys }
 
@@ -126,6 +172,10 @@ enum CLIArgumentParser {
         let command: CLICommand
         switch first {
         case "status": command = .status(try parseSelection(rest))
+        case "watch": command = .watch(try parseSelection(rest))
+        case "cache":
+            guard rest == ["status"] else { throw CLIArgumentError.unexpectedArguments(first) }
+            command = .cacheStatus
         case "set-key", "clear-key":
             guard let targets = try parseTargets(rest), targets.count == 1 else {
                 throw CLIArgumentError.oneProviderRequired(first)
@@ -164,13 +214,32 @@ enum CLIArgumentParser {
             command = .status(try parseSelection(positional))
         }
 
-        if json || strict {
+        if json || strict || short || allWindows || refresh || showReset || maximumAge != nil {
             switch command {
-            case .status, .doctor: break
+            case .status: break
+            case .watch where !json: break
+            case .doctor where !short && !allWindows && !refresh && !showReset && maximumAge == nil: break
             default: throw CLIArgumentError.statusOnlyOption
             }
         }
-        return .init(command: command, json: json, strict: strict)
+        guard !(json && short), (!allWindows && !showReset) || short else { throw CLIArgumentError.unknownOption("--short/--json or --all-windows/--show-reset without --short") }
+        return .init(command: command, json: json, strict: strict, short: short, allWindows: allWindows, refresh: refresh, showReset: showReset, maximumAge: maximumAge)
+    }
+
+    private static func parseMaximumAge(_ value: String) throws -> TimeInterval {
+        guard let unit = value.last, let amount = Int(value.dropLast()), amount > 0 else {
+            throw CLIArgumentError.invalidMaximumAge(value)
+        }
+        let multiplier: Int
+        switch unit {
+        case "s": multiplier = 1
+        case "m": multiplier = 60
+        case "h": multiplier = 3_600
+        case "d": multiplier = 86_400
+        default: throw CLIArgumentError.invalidMaximumAge(value)
+        }
+        guard amount <= 604_800 / multiplier else { throw CLIArgumentError.invalidMaximumAge(value) }
+        return TimeInterval(amount * multiplier)
     }
 
     private static func parseSelection(_ values: [String]) throws -> ProviderSelection {

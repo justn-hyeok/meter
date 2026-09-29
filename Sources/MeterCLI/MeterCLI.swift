@@ -12,22 +12,25 @@ struct CLIResult {
 }
 
 struct MeterCLIApplication {
-    static let version = "0.4.24"
+    static let version = "0.4.25"
 
     let service: UsageService
     let settings: MeterSettings
     let secrets: SecretStore
+    let cache: UsageCache
 
     /// Without a service, one is made reading from `secrets`, so the accounts listed and the
     /// keys used to query them come from the same file.
     init(
         service: UsageService? = nil,
         settings: MeterSettings = MeterSettings(),
-        secrets: SecretStore = .default
+        secrets: SecretStore = .default,
+        cache: UsageCache = .default
     ) {
         self.service = service ?? UsageService(secrets: secrets)
         self.settings = settings
         self.secrets = secrets
+        self.cache = cache
         settings.migrateIfNeeded()
     }
 
@@ -39,6 +42,11 @@ struct MeterCLIApplication {
             return .init(standardOutput: "meter \(Self.version)", standardError: "", exitCode: 0)
         case .providers:
             return .init(standardOutput: CLITextFormatter.providers(settings: settings, accounts: Account.all(in: secrets)), standardError: "", exitCode: 0)
+        case .cacheStatus:
+            guard cache.isReadable else {
+                return .init(standardOutput: "", standardError: "No readable usage cache. Start Meter.app or run 'meter --refresh'.", exitCode: 2)
+            }
+            return .init(standardOutput: CLITextFormatter.cacheStatus(cache.details(for: accounts)), standardError: "", exitCode: 0)
         case .enable(let targets):
             return update(targets, enabled: true)
         case .disable(let targets):
@@ -50,7 +58,9 @@ struct MeterCLIApplication {
         case .doctor:
             return doctor(json: options.json, strict: options.strict)
         case .status(let selection):
-            return await status(selection, json: options.json, strict: options.strict)
+            return await status(selection, options: options)
+        case .watch(let selection):
+            return await status(selection, options: options)
         }
     }
 
@@ -113,10 +123,12 @@ struct MeterCLIApplication {
         }
         do {
             try secrets.setSecret(secret, for: account)
-            return .init(standardOutput: "Stored a key for \(account.rawValue)", standardError: "", exitCode: 0)
         } catch {
             return .init(standardOutput: "", standardError: "Could not store the key: \(error.localizedDescription)", exitCode: 2)
         }
+        do { try cache.invalidate(account) }
+        catch { return .init(standardOutput: "", standardError: "Key stored, but its usage cache could not be cleared: \(error.localizedDescription)", exitCode: 2) }
+        return .init(standardOutput: "Stored a key for \(account.rawValue)", standardError: "", exitCode: 0)
     }
 
     private func clearKey(for account: Account) -> CLIResult {
@@ -130,12 +142,14 @@ struct MeterCLIApplication {
         }
         do {
             try secrets.setSecret(nil, for: account)
-            settings.forget(account)
-            let removed = account.name == nil ? "the stored key for \(account.rawValue)" : "account \(account.rawValue)"
-            return .init(standardOutput: "Removed \(removed)", standardError: "", exitCode: 0)
         } catch {
             return .init(standardOutput: "", standardError: "Could not remove the key: \(error.localizedDescription)", exitCode: 2)
         }
+        settings.forget(account)
+        do { try cache.invalidate(account) }
+        catch { return .init(standardOutput: "", standardError: "Key removed, but its usage cache could not be cleared: \(error.localizedDescription)", exitCode: 2) }
+        let removed = account.name == nil ? "the stored key for \(account.rawValue)" : "account \(account.rawValue)"
+        return .init(standardOutput: "Removed \(removed)", standardError: "", exitCode: 0)
     }
 
     /// Reads from stdin so the key never reaches shell history, with echo off on a terminal.
@@ -184,7 +198,7 @@ struct MeterCLIApplication {
         }
     }
 
-    private func status(_ selection: ProviderSelection, json: Bool, strict: Bool) async -> CLIResult {
+    private func status(_ selection: ProviderSelection, options: CLIOptions) async -> CLIResult {
         let selected: [Account]
         switch selection {
         case .enabled: selected = accounts.filter(settings.enabled)
@@ -203,13 +217,40 @@ struct MeterCLIApplication {
             )
         }
 
-        let snapshots = await service.fetch(selected)
-        let healthyCount = snapshots.count { $0.state == .live }
-        let unhealthyCount = snapshots.count - healthyCount
-        let exitCode: Int32 = healthyCount == 0 ? 2 : (strict && unhealthyCount > 0 ? 1 : 0)
+        var snapshots: [UsageSnapshot]
+        if options.refresh {
+            let startedAt = Date.now
+            let fetched = await service.fetch(selected)
+            let cached = cache.read(maximumAge: options.maximumAge ?? UsageCache.maximumAge)
+            snapshots = fetched.map { incoming in
+                if incoming.state == .unavailable, let previous = cached[incoming.accountID] {
+                    return UsageSnapshot(provider: previous.provider, buckets: previous.buckets,
+                                         fetchedAt: previous.fetchedAt, source: previous.source,
+                                         state: .stale, message: incoming.message).for(previous.accountID)
+                }
+                return incoming
+            }
+            do { try cache.save(snapshots, startedAt: startedAt) }
+            catch { return .init(standardOutput: "", standardError: "Could not save usage cache: \(error.localizedDescription)", exitCode: 2) }
+            if let maximumAge = options.maximumAge {
+                let checked = cache.read(maximumAge: maximumAge)
+                snapshots = snapshots.map { checked[$0.accountID] ?? $0 }
+            }
+        } else {
+            let cached = cache.read(maximumAge: options.maximumAge ?? UsageCache.maximumAge)
+            snapshots = selected.map { account in
+                cached[account] ?? UsageSnapshot.unavailable(account.provider,
+                    "No cached observation. Start Meter.app or run 'meter --refresh'.").for(account)
+            }
+        }
+        let usableCount = snapshots.count { !$0.buckets.isEmpty }
+        let unhealthyCount = snapshots.count { $0.state != .live }
+        let exitCode: Int32 = usableCount == 0 ? 2 : ((options.strict || options.maximumAge != nil) && unhealthyCount > 0 ? 1 : 0)
 
         do {
-            let output = json
+            let output = options.short
+                ? CLITextFormatter.short(snapshots, allWindows: options.allWindows, showReset: options.showReset)
+                : options.json
                 ? try CLIJSONFormatter.status(snapshots)
                 : CLITextFormatter.status(snapshots, style: .detect())
             return .init(standardOutput: output, standardError: "", exitCode: exitCode)
@@ -220,8 +261,10 @@ struct MeterCLIApplication {
 
     static let help = """
     Usage:
-      meter [<provider> ...] [--json] [--strict]
-      meter status [<provider> ...] [--json] [--strict]
+      meter [<provider> ...] [--json | --short] [--strict] [--refresh] [--max-age 10m]
+      meter status [<provider> ...] [--json | --short] [--strict] [--refresh] [--max-age 10m]
+      meter watch [<provider> ...] [--short] [--refresh] [--max-age 10m]
+      meter cache status
       meter doctor [--json] [--strict]
       meter providers
       meter enable <provider> ...
@@ -244,7 +287,9 @@ struct MeterCLIApplication {
       remove it with 'meter clear-key deepseek --name work'.
 
     Commands:
-      status       Query provider usage
+      status       Read the app's saved usage (no network request)
+      watch        Redraw cached usage every five seconds; --refresh queries once at start
+      cache status Show each account's last observation and last fetch attempt
       doctor       Report where each credential comes from and whether it is present,
                    without any network request or keychain prompt
       set-key      Read a provider's API key from stdin and store it for both the app
@@ -254,14 +299,19 @@ struct MeterCLIApplication {
     Options:
       --json       Print a stable JSON envelope
       --strict     Exit 1 when any selected provider is unavailable
+      --short      Print one compact item per account, using its fullest window
+      --all-windows  Include every window with --short
+      --show-reset   Include reset countdown with --short
+      --refresh    Query providers now and update the shared cache
+      --max-age     Mark older data stale and exit 1 (30s, 10m, 2h or 1d; max 7d)
       -h, --help   Show help
       -V, --version
 
     Exit status:
       0  Query succeeded, or at least one provider succeeded without --strict
-      1  At least one provider was unavailable with --strict, or doctor --strict
+      1  Stale or unavailable data with --strict or --max-age, or doctor --strict
          found an enabled provider with no credential
-      2  Every selected provider was unavailable
+      2  Every selected provider was unavailable, or the cache could not be saved
       64 Invalid command or arguments
     """
 }
@@ -272,6 +322,24 @@ struct MeterCLI {
         let result: CLIResult
         do {
             let options = try CLIArgumentParser.parse(Array(CommandLine.arguments.dropFirst()))
+            if case .watch = options.command {
+                guard isatty(STDOUT_FILENO) == 1 else {
+                    write("watch requires a terminal", to: .standardError)
+                    exit(64)
+                }
+                let app = MeterCLIApplication()
+                var first = true
+                while true {
+                    let frame = await app.run(.init(command: options.command, json: false,
+                        strict: options.strict, short: options.short, allWindows: options.allWindows,
+                        refresh: first && options.refresh, showReset: options.showReset,
+                        maximumAge: options.maximumAge))
+                    first = false
+                    FileHandle.standardOutput.write(Data("\u{1B}[H\u{1B}[2J".utf8))
+                    write(frame.standardOutput.isEmpty ? frame.standardError : frame.standardOutput, to: .standardOutput)
+                    try? await Task.sleep(for: .seconds(5))
+                }
+            }
             result = await MeterCLIApplication().run(options)
         } catch {
             result = .init(

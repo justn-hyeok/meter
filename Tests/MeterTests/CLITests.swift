@@ -14,6 +14,21 @@ import Testing
     // Every name typed out is a named list, not `all`: it prints in the order typed.
     let typed = ProviderID.allCases.map(\.rawValue)
     #expect(try CLIArgumentParser.parse(typed).command == .status(.named(ProviderID.allCases.map { .provider($0) })))
+    #expect(try CLIArgumentParser.parse(["--short", "--all-windows", "codex"]) ==
+        .init(command: .status(.named([.provider(.codex)])), json: false, strict: false, short: true, allWindows: true))
+    #expect(try CLIArgumentParser.parse(["watch", "claude", "--refresh"]).command ==
+        .watch(.named([.provider(.claude)])))
+    #expect(throws: CLIArgumentError.statusOnlyOption) {
+        try CLIArgumentParser.parse(["watch", "--json"])
+    }
+    #expect(try CLIArgumentParser.parse(["cache", "status"]).command == .cacheStatus)
+    #expect(try CLIArgumentParser.parse(["--short", "--show-reset", "--max-age=10m"]).maximumAge == 600)
+    #expect(throws: CLIArgumentError.invalidMaximumAge("0m")) {
+        try CLIArgumentParser.parse(["--max-age", "0m"])
+    }
+    #expect(throws: CLIArgumentError.invalidMaximumAge("8d")) {
+        try CLIArgumentParser.parse(["--max-age", "8d"])
+    }
 }
 
 @Test func rejectsUnknownProvidersAndMissingMutationTargets() {
@@ -61,12 +76,120 @@ import Testing
         )),
         .cursor: StubProvider(snapshot: .unavailable(.cursor, "sign in")),
     ])
-    let app = MeterCLIApplication(service: service, settings: MeterSettings(defaults: defaults))
-    let result = await app.run(.init(command: .status(.named([.provider(.codex), .provider(.cursor)])), json: false, strict: true))
+    let cache = UsageCache(fileURL: FileManager.default.temporaryDirectory
+        .appending(path: "MeterCLI-\(UUID().uuidString)/usage-cache.json"))
+    let app = MeterCLIApplication(service: service, settings: MeterSettings(defaults: defaults), cache: cache)
+    let result = await app.run(.init(command: .status(.named([.provider(.codex), .provider(.cursor)])), json: false, strict: true, refresh: true))
 
     #expect(result.exitCode == 1)
     #expect(result.standardOutput.contains("Codex"))
     #expect(result.standardOutput.contains("sign in"))
+}
+
+@Test func refreshPopulatesCacheAndShortReadsWithoutAProvider() async throws {
+    let suiteName = "MeterCLI.Cache.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterCLI-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appending(path: "usage-cache.json")
+    let cache = UsageCache(fileURL: file)
+    let snapshot = UsageSnapshot(provider: .claude, buckets: [
+        .init(id: "hour", label: "5-hour", used: 35, limit: 100, remaining: 65, resetAt: nil, unit: .percent),
+        .init(id: "week", label: "Weekly", used: 27, limit: 100, remaining: 73, resetAt: nil, unit: .percent),
+    ], fetchedAt: .now, source: "test", state: .live, message: nil)
+    let selection = CLICommand.status(.named([.provider(.claude)]))
+    let fetcher = MeterCLIApplication(service: UsageService(providers: [.claude: StubProvider(snapshot: snapshot)]),
+                                      settings: MeterSettings(defaults: defaults), cache: cache)
+    #expect((await fetcher.run(.init(command: selection, json: false, strict: false, refresh: true))).exitCode == 0)
+    let reader = MeterCLIApplication(service: UsageService(providers: [:]),
+                                     settings: MeterSettings(defaults: defaults), cache: cache)
+    let compact = await reader.run(.init(command: selection, json: false, strict: false, short: true))
+    #expect(compact.standardOutput == "Claude 35%")
+    #expect(compact.exitCode == 0)
+    let all = await reader.run(.init(command: selection, json: false, strict: false, short: true, allWindows: true))
+    #expect(all.standardOutput == "Claude 5-hour 35% · Claude Weekly 27%")
+    #expect((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int) == 0o600)
+}
+
+@Test func oldCacheIsMarkedStaleWithoutRefreshingIt() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterCLI-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = UsageCache(fileURL: directory.appending(path: "usage-cache.json"))
+    let old = Date.now.addingTimeInterval(-700)
+    try cache.save([UsageSnapshot(provider: .codex,
+        buckets: [.init(id: "week", label: "Weekly", used: 80, limit: 100, remaining: 20, resetAt: nil, unit: .percent)],
+        fetchedAt: old, source: "test", state: .live, message: nil)])
+    let snapshot = try #require(cache.read()[Account(.codex)])
+    #expect(snapshot.state == .stale)
+    #expect(CLITextFormatter.short([snapshot]) == "Codex 80% (stale)")
+}
+
+@Test func failedRefreshKeepsPreviousValueButMarksItStaleInCache() async throws {
+    let suiteName = "MeterCLI.CacheFailure.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterCLI-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = UsageCache(fileURL: directory.appending(path: "usage-cache.json"))
+    try cache.save([UsageSnapshot(provider: .codex,
+        buckets: [.init(id: "week", label: "Weekly", used: 51, limit: 100, remaining: 49, resetAt: nil, unit: .percent)],
+        fetchedAt: .now, source: "test", state: .live, message: nil)])
+    let app = MeterCLIApplication(service: UsageService(providers: [.codex: StubProvider(snapshot: .unavailable(.codex, "offline"))]),
+                                  settings: MeterSettings(defaults: defaults), cache: cache)
+    let selection = CLICommand.status(.named([.provider(.codex)]))
+    let result = await app.run(.init(command: selection, json: false, strict: true, short: true, refresh: true))
+    #expect(result.exitCode == 1)
+    #expect(result.standardOutput == "Codex 51% (stale)")
+    #expect(cache.read()[Account(.codex)]?.state == .stale)
+    let diagnostic = await app.run(.init(command: .cacheStatus, json: false, strict: false))
+    #expect(diagnostic.standardOutput.contains("codex  stale"))
+    #expect(diagnostic.standardOutput.contains("failed: offline"))
+}
+
+@Test func maximumAgeOverridesDefaultAndFailsClosedWithoutStrict() async throws {
+    let suiteName = "MeterCLI.MaxAge.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterCLI-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = UsageCache(fileURL: directory.appending(path: "usage-cache.json"))
+    let reset = Date.now.addingTimeInterval(7_200)
+    try cache.save([UsageSnapshot(provider: .codex,
+        buckets: [.init(id: "week", label: "Weekly", used: 77, limit: 100, remaining: 23,
+                        resetAt: reset, unit: .percent)],
+        fetchedAt: .now.addingTimeInterval(-480), source: "test", state: .live, message: nil)])
+    let app = MeterCLIApplication(service: UsageService(providers: [:]),
+                                  settings: MeterSettings(defaults: defaults), cache: cache)
+    let command = CLICommand.status(.named([.provider(.codex)]))
+    let tolerant = await app.run(.init(command: command, json: false, strict: false, short: true,
+                                        showReset: true, maximumAge: 600))
+    #expect(tolerant.exitCode == 0)
+    #expect(tolerant.standardOutput.contains("Codex 77% · resets 1h"))
+    let limited = await app.run(.init(command: command, json: false, strict: false, short: true,
+                                      maximumAge: 300))
+    #expect(limited.exitCode == 1)
+    #expect(limited.standardOutput == "Codex 77% (stale)")
+}
+
+@Test func oldCacheDocumentRemainsReadableAfterMetadataUpgrade() throws {
+    struct LegacyDocument: Encodable {
+        let version = 1
+        let snapshots: [UsageSnapshot]
+    }
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterCLI-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appending(path: "usage-cache.json")
+    let cache = UsageCache(fileURL: file)
+    let snapshot = UsageSnapshot(provider: .claude,
+        buckets: [.init(id: "week", label: "Weekly", used: 20, limit: 100, remaining: 80, resetAt: nil, unit: .percent)],
+        fetchedAt: .now, source: "test", state: .live, message: nil)
+    try JSONEncoder().encode(LegacyDocument(snapshots: [snapshot])).write(to: file)
+    #expect(cache.read()[Account(.claude)]?.buckets.first?.percentageUsed == 20)
+    #expect(cache.details(for: [Account(.claude)])[0].lastAttempt == nil)
+    try cache.save([snapshot])
+    #expect(cache.details(for: [Account(.claude)])[0].lastAttempt?.succeeded == true)
 }
 
 private struct StubProvider: UsageProvider {
@@ -275,7 +398,14 @@ private struct StubProvider: UsageProvider {
     defer { defaults.removePersistentDomain(forName: suite) }
     let settings = MeterSettings(defaults: defaults)
     settings.setEnabled(false, for: work)
-    let app = MeterCLIApplication(service: UsageService(providers: [:]), settings: settings, secrets: secrets)
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterCLI-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = UsageCache(fileURL: directory.appending(path: "usage-cache.json"))
+    try cache.save([UsageSnapshot(provider: .deepSeek,
+        buckets: [.init(id: "balance", label: "Balance", used: 10, limit: 100, remaining: 90, resetAt: nil, unit: .percent)],
+        fetchedAt: .now, source: "test", state: .live, message: nil).for(work)])
+    let app = MeterCLIApplication(service: UsageService(providers: [:]), settings: settings,
+                                  secrets: secrets, cache: cache)
 
     let typo = await app.run(.init(command: .clearKey(Account(.deepSeek, name: "wrok")), json: false, strict: false))
     #expect(typo.exitCode == 64)
@@ -284,8 +414,35 @@ private struct StubProvider: UsageProvider {
     let removed = await app.run(.init(command: .clearKey(work), json: false, strict: false))
     #expect(removed.exitCode == 0)
     #expect(secrets.secret(for: work) == nil)
+    #expect(cache.read()[work] == nil)
     // Added again later, it is on, like any new account.
     #expect(settings.enabled(work))
+}
+
+@Test func lateCacheWritesCannotRestoreChangedCredentialsOrOlderObservations() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterCLI-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = UsageCache(fileURL: directory.appending(path: "usage-cache.json"))
+    let account = Account(.deepSeek)
+    let baseline = Date.now.addingTimeInterval(-30)
+    func snapshot(_ percent: Double, fetchedAt: Date, state: SnapshotState) -> UsageSnapshot {
+        UsageSnapshot(provider: .deepSeek,
+            buckets: [.init(id: "week", label: "Weekly", used: percent, limit: 100,
+                            remaining: 100 - percent, resetAt: nil, unit: .percent)],
+            fetchedAt: fetchedAt, source: "test", state: state, message: state == .stale ? "offline" : nil)
+    }
+    try cache.save([snapshot(70, fetchedAt: baseline.addingTimeInterval(20), state: .live)],
+                   attemptedAt: baseline.addingTimeInterval(21))
+    try cache.save([snapshot(20, fetchedAt: baseline, state: .stale)],
+                   attemptedAt: baseline.addingTimeInterval(22), startedAt: baseline)
+    #expect(cache.read()[account]?.buckets.first?.percentageUsed == 70)
+    try cache.invalidate(account, at: baseline.addingTimeInterval(25))
+    try cache.save([snapshot(20, fetchedAt: baseline.addingTimeInterval(27), state: .live)],
+                   attemptedAt: baseline.addingTimeInterval(28), startedAt: baseline.addingTimeInterval(24))
+    #expect(cache.read()[account] == nil)
+    try cache.save([snapshot(5, fetchedAt: baseline.addingTimeInterval(29), state: .live)],
+                   attemptedAt: baseline.addingTimeInterval(30), startedAt: baseline.addingTimeInterval(26))
+    #expect(cache.read()[account]?.buckets.first?.percentageUsed == 5)
 }
 
 @Test func providersPadsNamesByCharacter() throws {

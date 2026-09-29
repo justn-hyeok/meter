@@ -16,13 +16,29 @@ cd "$project_dir"
 
 current=$(plutil -extract CFBundleShortVersionString raw Resources/Info.plist)
 build=$(plutil -extract CFBundleVersion raw Resources/Info.plist)
-[ "$current" != "$version" ] || { echo "error: already at $version" >&2; exit 1; }
+if git show-ref --verify --quiet "refs/tags/v$version"; then
+    echo "error: tag v$version already exists" >&2
+    exit 1
+fi
 
 echo "==> $current -> $version"
-plutil -replace CFBundleShortVersionString -string "$version" Resources/Info.plist
-plutil -replace CFBundleVersion -string "$((build + 1))" Resources/Info.plist
-/usr/bin/sed -i '' "s/static let version = \"$current\"/static let version = \"$version\"/" Sources/MeterCLI/MeterCLI.swift
-/usr/bin/sed -i '' "s/$current/$version/g" README.md README.ko.md
+if [ "$current" != "$version" ]; then
+    plutil -replace CFBundleShortVersionString -string "$version" Resources/Info.plist
+    plutil -replace CFBundleVersion -string "$((build + 1))" Resources/Info.plist
+    /usr/bin/sed -i '' "s/static let version = \"$current\"/static let version = \"$version\"/" Sources/MeterCLI/MeterCLI.swift
+fi
+grep -q "static let version = \"$version\"" Sources/MeterCLI/MeterCLI.swift || {
+    echo "error: CLI version does not match $version" >&2
+    exit 1
+}
+published=$(git tag --sort=-version:refname --list 'v[0-9]*' | head -1)
+if [ -n "$published" ]; then
+    previous=${published#v}
+    /usr/bin/sed -i '' \
+        -e "s/v$previous/v$version/g" \
+        -e "s/$previous-macos-universal/$version-macos-universal/g" \
+        README.md README.ko.md
+fi
 
 echo "==> tests"
 # Piping straight into tail threw away the exit status, so a failing suite still released.
@@ -65,4 +81,3 @@ gh release create "v$version" \
 echo "==> local CLI"
 "$project_dir/Scripts/install-cli.sh" >/dev/null
 "${PREFIX:-$HOME/.local}/bin/meter" --version
-

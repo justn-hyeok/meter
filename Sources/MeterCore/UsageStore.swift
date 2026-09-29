@@ -75,12 +75,15 @@ public final class UsageStore {
     /// Identifies the most recently started fetch per provider, so a slow batch cannot
     /// land on top of a newer single refresh that has already answered.
     private var latestFetch: [Account: Int] = [:]
+    private var latestFetchStartedAt: [Account: Date] = [:]
+    private var snapshotFetchStartedAt: [Account: Date] = [:]
     private var fetchCounter = 0
     private var refreshTask: Task<Void, Never>?
     private let settings: MeterSettings
     private let refreshOnEnable: Bool
     private let service: UsageService
     private let secrets: SecretStore
+    private let cache: UsageCache?
 
     public convenience init(
         defaults: UserDefaults = UserDefaults(suiteName: MeterSettings.suiteName) ?? .standard,
@@ -89,7 +92,8 @@ public final class UsageStore {
         self.init(
             settings: MeterSettings(defaults: defaults),
             service: UsageService(),
-            refreshOnEnable: refreshOnEnable
+            refreshOnEnable: refreshOnEnable,
+            cache: .default
         )
     }
 
@@ -97,11 +101,13 @@ public final class UsageStore {
         settings: MeterSettings,
         service: UsageService,
         refreshOnEnable: Bool = true,
-        secrets: SecretStore = .default
+        secrets: SecretStore = .default,
+        cache: UsageCache? = nil
     ) {
         self.settings = settings
         self.service = service
         self.secrets = secrets
+        self.cache = cache
         self.refreshOnEnable = refreshOnEnable
         settings.migrateIfNeeded()
         let accounts = Account.all(in: secrets)
@@ -133,6 +139,7 @@ public final class UsageStore {
             enabledAccounts.remove(account)
             // Drop the data with the toggle, so the gauge stops counting it.
             snapshots[account] = nil
+            snapshotFetchStartedAt[account] = nil
         }
         settings.setEnabled(enabled, for: account)
         if enabled && refreshOnEnable { Task { await refresh(account) } }
@@ -160,14 +167,19 @@ public final class UsageStore {
 
         let selected = order.filter(enabled)
         let tokens = Dictionary(uniqueKeysWithValues: selected.map { ($0, beginFetch($0)) })
+        let startedAt = Date.now
         let results = await Keychain.$allowInteraction.withValue(interactive) {
             await service.fetch(selected)
         }
         for snapshot in results { merge(snapshot, token: tokens[snapshot.accountID]) }
+        try? cache?.save(selected.compactMap { snapshots[$0] }, startedAt: startedAt)
 
         // A refresh that produced nothing usable must not advertise itself as the last
         // update; the menu would otherwise show a fresh time above stale figures.
-        if results.contains(where: { $0.state == .live }) { lastRefresh = .now }
+        if results.contains(where: { incoming in
+            incoming.state == .live && snapshots[incoming.accountID]?.state == .live
+                && snapshots[incoming.accountID]?.fetchedAt == incoming.fetchedAt
+        }) { lastRefresh = .now }
     }
 
     /// Moves `provider` into `target`'s place: after it when moving down the list, before it
@@ -206,7 +218,10 @@ public final class UsageStore {
         if enabledNow != enabledAccounts {
             // Keep the invariant: only enabled accounts have snapshots. That covers an
             // account whose key was removed, which is no longer in the list at all.
-            for account in enabledAccounts.subtracting(enabledNow) { snapshots[account] = nil }
+            for account in enabledAccounts.subtracting(enabledNow) {
+                snapshots[account] = nil
+                snapshotFetchStartedAt[account] = nil
+            }
             enabledAccounts = enabledNow
         }
         let keys = Self.providersWithStoredKeys(secrets)
@@ -261,6 +276,10 @@ public final class UsageStore {
     /// silently did nothing while clearing the field left the user retyping forever.
     public func storeKey(_ value: String, for provider: ProviderID) throws {
         try secrets.setSecret(value, for: provider)
+        try cache?.invalidate(Account(provider))
+        snapshots[Account(provider)] = nil
+        snapshotFetchStartedAt[Account(provider)] = nil
+        latestFetch[Account(provider)] = nil
         storedKeyProviders = Self.providersWithStoredKeys(secrets)
         credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
         Task { await refresh(Account(provider)) }
@@ -278,10 +297,12 @@ public final class UsageStore {
     public func refresh(_ account: Account, interactive: Bool = false) async {
         guard enabled(account) else { return }
         let token = beginFetch(account)
+        let startedAt = Date.now
         let snapshot = await Keychain.$allowInteraction.withValue(interactive) {
             await service.fetch(account)
         }
         merge(snapshot, token: token)
+        if let stored = snapshots[account] { try? cache?.save([stored], startedAt: startedAt) }
     }
 
     func refresh(_ provider: ProviderID, interactive: Bool = false) async {
@@ -310,8 +331,15 @@ public final class UsageStore {
     }
 
     private func beginFetch(_ account: Account) -> Int {
+        if let invalidatedAt = cache?.invalidatedAt(for: account),
+           snapshots[account] != nil,
+           snapshotFetchStartedAt[account].map({ $0 <= invalidatedAt }) ?? true {
+            snapshots[account] = nil
+            snapshotFetchStartedAt[account] = nil
+        }
         fetchCounter += 1
         latestFetch[account] = fetchCounter
+        latestFetchStartedAt[account] = .now
         return fetchCounter
     }
 
@@ -336,9 +364,15 @@ public final class UsageStore {
         // the provider off, or a newer fetch can answer first; neither result belongs here.
         let account = incoming.accountID
         guard enabled(account), let token, latestFetch[account] == token else { return }
+        if let invalidatedAt = cache?.invalidatedAt(for: account),
+           let startedAt = latestFetchStartedAt[account], startedAt <= invalidatedAt {
+            snapshots[account] = nil
+            snapshotFetchStartedAt[account] = nil
+            return
+        }
 
         if incoming.state == .unavailable,
-           let previous = snapshots[account],
+           let previous = snapshots[account] ?? cache?.read()[account],
            previous.state != .unavailable,
            !previous.buckets.isEmpty {
             snapshots[account] = UsageSnapshot(
@@ -351,6 +385,7 @@ public final class UsageStore {
             ).for(account)
         } else {
             snapshots[account] = incoming
+            snapshotFetchStartedAt[account] = latestFetchStartedAt[account]
         }
     }
 }

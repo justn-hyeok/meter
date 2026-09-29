@@ -39,7 +39,7 @@ Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor
 
 ## 설치
 
-[v0.4.24 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.24)에서 `Meter-0.4.24-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
+[v0.4.25 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.4.25)에서 `Meter-0.4.25-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다.
 
 **설치 후 필수:** 릴리즈는 공증되지 않아서, 브라우저가 붙인 격리 속성을 지우기 전까지 macOS가 실행을 막습니다. 앱을 옮긴 뒤 한 번만 실행하세요.
 
@@ -169,11 +169,18 @@ ad-hoc  => cdhash H"97720ab1..."                 리빌드마다 변경
 
 ## CLI
 
-메뉴바 앱과 동일한 제공자 및 활성화 설정을 사용하는 `meter` CLI가 포함되어 있습니다. 앱이 실행 중이지 않아도 최신 사용량을 직접 조회합니다.
+메뉴바 앱과 동일한 제공자 및 활성화 설정을 사용하는 `meter` CLI가 포함되어 있습니다. 앱은 시작할 때와 이후 5분마다 조회 결과를 `~/Library/Application Support/Meter/usage-cache.json`에 저장합니다. CLI는 기본적으로 이 파일을 네트워크 요청 없이 읽습니다. 앱이 꺼져 있어도 마지막 관측값을 읽을 수 있으며, 6분이 넘은 값에는 `stale`이 표시됩니다. 캐시가 없으면 앱을 실행하거나 `--refresh`로 직접 조회하세요.
 
 ```sh
 swift run meter
 swift run meter codex
+swift run meter --short
+swift run meter --short --all-windows
+swift run meter --short --show-reset
+swift run meter --short --max-age 10m
+swift run meter --refresh
+swift run meter watch
+swift run meter cache status
 swift run meter cursor command-code --json
 swift run meter doctor
 swift run meter set-key deepseek
@@ -184,11 +191,39 @@ swift run meter disable deepseek
 
 제공자를 생략하면 공유 설정에서 활성화된 제공자를 조회합니다. `meter all`은 비활성 제공자까지 모두 조회하며 `meter codex`는 `meter status codex`의 단축형입니다. `providers` 명령은 현재 활성화 상태를 표시합니다.
 
+`--short`는 계정마다 사용률이 가장 높은 창 하나를 `Claude 35% · Codex 27%`처럼 한 줄로 표시합니다. `--all-windows`를 더하면 모든 창을, `--show-reset`을 더하면 초기화까지 남은 시간을 표시합니다. `--max-age 10m`는 10분이 지난 관측값을 오래된 값으로 표시하고 종료 코드 1을 반환합니다(`s`, `m`, `h`, `d`; 최대 7일). `meter watch`는 터미널에서 캐시를 5초마다 다시 그립니다. `meter watch --refresh`는 시작할 때 한 번만 직접 조회합니다. `meter cache status`는 계정별 마지막 관측과 조회 시각 및 실패 이유를 보여 줍니다. 기존 캐시 파일도 읽으며, 새로 저장할 때 시도 정보를 추가합니다. 캐시 파일에는 사용량 관측값만 저장하며 자격 증명은 저장하지 않습니다.
+
+상태줄에 넣을 때는 설치된 `meter`가 `PATH`에 있어야 합니다. 아래는 각 도구의 기존 설정에 추가할 예시입니다. 기존 상태줄이 있다면 그 명령에 `meter --short`를 붙여 사용하세요.
+
+```tmux
+# ~/.tmux.conf: 기존 status-right가 없다면
+set -g status-right '#(meter --short)'
+```
+
+```toml
+# ~/.config/starship.toml
+[custom.meter]
+when = true
+command = "meter --short"
+require_repo = false
+format = "[$output]($style)"
+```
+
+`~/.claude/settings.json`의 기존 객체에 다음 `statusLine` 필드를 합칩니다.
+
+```json
+{
+  "statusLine": { "type": "command", "command": "meter --short", "refreshInterval": 300 }
+}
+```
+
+참고: [tmux 매뉴얼](https://man.openbsd.org/tmux), [Starship custom 모듈](https://starship.rs/config/), [Claude Code 상태줄](https://code.claude.com/docs/en/statusline).
+
 `meter set-key <provider>`는 Meter가 이 맥에서 찾을 수 없는 제공자의 API 키를 stdin에서 읽어 저장하고, `meter clear-key <provider>`는 지웁니다. `meter doctor`는 각 자격 증명의 출처와 존재 여부를 보고합니다. 네트워크 요청을 하지 않고 키체인 프롬프트도 띄우지 않으므로 제공자가 고장난 상태에서도 사용할 수 있습니다. `--strict`와 함께 쓰면 활성화된 제공자에 자격 증명이 없을 때 1을 반환합니다.
 
-기본 모드에서는 하나 이상의 제공자가 성공하면 종료 코드 0을 반환합니다. 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자가 실패하면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다. 스키마 3은 필드를 바꾸지 않았고, `snapshots`와 doctor의 `credentials`가 메뉴에서 정한 순서(제공자를 직접 적으면 적은 순서)를 따른다는 표시입니다. 이 순서는 0.4.16~0.4.19에서 이미 스키마 2로 나갔으므로(doctor는 0.4.19만), 항목은 위치가 아니라 `provider`로 읽으세요. 스키마 4(0.4.24)는 이름 붙인 계정을 표시합니다. 한 제공자가 계정 수만큼 여러 번 나올 수 있고, 이름 붙인 계정의 항목에는 계정 이름을 담은 `account` 필드가 붙습니다. 기본 계정의 항목에는 `account` 필드가 없습니다. 0.4.24은 이미 이 형태를 스키마 3으로 내보냈습니다.
+기본 모드에서는 하나 이상의 제공자에 사용 가능한 관측값이 있으면 종료 코드 0을 반환합니다. 오래된 값이나 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자의 데이터가 없으면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 버전이 지정된 `schemaVersion` 봉투와 조회 불가 제공자를 `snapshots`에 포함합니다. 스키마 2에서 Cursor 지출 버킷 id가 `on-demand` → `spend`로 바뀌었고 doctor의 `availability`에 `blocked`가 추가됐습니다. 스키마 3은 필드를 바꾸지 않았고, `snapshots`와 doctor의 `credentials`가 메뉴에서 정한 순서(제공자를 직접 적으면 적은 순서)를 따른다는 표시입니다. 이 순서는 0.4.16~0.4.19에서 이미 스키마 2로 나갔으므로(doctor는 0.4.19만), 항목은 위치가 아니라 `provider`로 읽으세요. 스키마 4(0.4.24)는 이름 붙인 계정을 표시합니다. 한 제공자가 계정 수만큼 여러 번 나올 수 있고, 이름 붙인 계정의 항목에는 계정 이름을 담은 `account` 필드가 붙습니다. 기본 계정의 항목에는 `account` 필드가 없습니다. 0.4.24은 이미 이 형태를 스키마 3으로 내보냈습니다.
 
-v0.4.24 릴리즈에는 `meter-0.4.24-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
+v0.4.25 릴리즈에는 `meter-0.4.25-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 
 ```sh
 ./Scripts/install-cli.sh

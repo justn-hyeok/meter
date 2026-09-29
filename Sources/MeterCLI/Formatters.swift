@@ -2,6 +2,54 @@ import Foundation
 import MeterCore
 
 enum CLITextFormatter {
+    static func short(_ snapshots: [UsageSnapshot], allWindows: Bool = false,
+                      showReset: Bool = false, now: Date = .now) -> String {
+        snapshots.flatMap { snapshot -> [String] in
+            let name: String
+            switch snapshot.provider {
+            case .openCodeGo: name = "OC"
+            case .deepSeek: name = "DeepSeek"
+            case .commandCode: name = "CC"
+            default: name = snapshot.provider.title
+            }
+            let accountName = snapshot.account.map { "\(name)#\($0)" } ?? name
+            let buckets: [UsageBucket]
+            if allWindows {
+                buckets = snapshot.buckets
+            } else {
+                buckets = snapshot.buckets.max { ($0.percentageUsed ?? -1) < ($1.percentageUsed ?? -1) }.map { [$0] } ?? []
+            }
+            guard !buckets.isEmpty else { return ["\(accountName) —"] }
+            return buckets.map { bucket in
+                let label = allWindows ? " \(bucket.label)" : ""
+                let reset = showReset ? " · resets \(UsageFormat.reset(bucket, now: now) ?? "—")" : ""
+                let stale = snapshot.state == .stale ? " (stale)" : ""
+                return "\(accountName)\(label) \(UsageFormat.value(bucket))\(reset)\(stale)"
+            }
+        }.joined(separator: " · ")
+    }
+
+    static func cacheStatus(_ details: [UsageCacheDetail], now: Date = .now) -> String {
+        details.map { detail in
+            let observation = detail.snapshot.map { snapshot in
+                "\(snapshot.state.rawValue), observed \(age(of: snapshot.fetchedAt, now: now)) ago"
+            } ?? "no observation"
+            let attempt = detail.lastAttempt.map { attempt in
+                let result = attempt.succeeded ? "ok" : "failed\(attempt.message.map { ": \($0)" } ?? "")"
+                return "last tried \(age(of: attempt.at, now: now)) ago (\(result))"
+            } ?? "never tried"
+            return "\(detail.account.rawValue)  \(observation) · \(attempt)"
+        }.joined(separator: "\n")
+    }
+
+    private static func age(of date: Date, now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        if seconds >= 86_400 { return "\(seconds / 86_400)d" }
+        if seconds >= 3_600 { return "\(seconds / 3_600)h" }
+        if seconds >= 60 { return "\(seconds / 60)m" }
+        return "\(seconds)s"
+    }
+
     /// One line per window, laid out like the menu: label, two-tone bar, figure, reset.
     static func status(_ snapshots: [UsageSnapshot], now: Date = .now, style: TerminalStyle = .plain) -> String {
         let tightest = tightestWindow(in: snapshots)

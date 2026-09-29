@@ -109,6 +109,49 @@ private func isolatedSettings() throws -> (MeterSettings, () -> Void) {
 }
 
 @MainActor
+@Test func appRefreshPublishesItsObservationToTheSharedCache() async throws {
+    let (settings, cleanup) = try isolatedSettings()
+    defer { cleanup() }
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterStore-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = UsageCache(fileURL: directory.appending(path: "usage-cache.json"))
+    let store = UsageStore(settings: settings,
+        service: UsageService(providers: [.codex: StubProvider(id: .codex,
+            snapshot: UsageSnapshot(provider: .codex,
+                buckets: [.init(id: "week", label: "Weekly", used: 42, limit: 100,
+                                remaining: 58, resetAt: nil, unit: .percent)],
+                fetchedAt: .now, source: "test", state: .live, message: nil))]),
+        refreshOnEnable: false, secrets: .forTests, cache: cache)
+    await store.refreshAll()
+    #expect(cache.read()[Account(.codex)]?.buckets.first?.percentageUsed == 42)
+}
+
+@MainActor
+@Test func externalKeyChangeDoesNotRestoreTheAppsOldObservation() async throws {
+    let (settings, cleanup) = try isolatedSettings()
+    defer { cleanup() }
+    let directory = FileManager.default.temporaryDirectory.appending(path: "MeterStore-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = UsageCache(fileURL: directory.appending(path: "usage-cache.json"))
+    let queue = SnapshotQueue([
+        UsageSnapshot(provider: .codex,
+            buckets: [.init(id: "week", label: "Weekly", used: 80, limit: 100,
+                            remaining: 20, resetAt: nil, unit: .percent)],
+            fetchedAt: .now, source: "old account", state: .live, message: nil),
+        .unavailable(.codex, "new account has no usage"),
+    ])
+    let store = UsageStore(settings: settings,
+        service: UsageService(providers: [.codex: QueuedProvider(id: .codex, queue: queue)]),
+        refreshOnEnable: false, secrets: .forTests, cache: cache)
+    await store.refresh(.codex)
+    #expect(store.snapshots[.codex]?.buckets.first?.percentageUsed == 80)
+    try cache.invalidate(Account(.codex)) // A CLI key change while the app stays open.
+    await store.refresh(.codex)
+    #expect(store.snapshots[.codex]?.buckets.isEmpty == true)
+    #expect(cache.read()[Account(.codex)] == nil)
+}
+
+@MainActor
 @Test func keepsTheLastGoodSnapshotAndMarksItStale() async throws {
     let (settings, cleanup) = try isolatedSettings()
     defer { cleanup() }

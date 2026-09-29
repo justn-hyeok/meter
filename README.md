@@ -39,7 +39,7 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 ## Install
 
-Download `Meter-0.4.24-macos-universal-app.zip` from the [v0.4.24 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.24), extract it, and move `Meter.app` to `/Applications`.
+Download `Meter-0.4.25-macos-universal-app.zip` from the [v0.4.25 release](https://github.com/justn-hyeok/meter/releases/tag/v0.4.25), extract it, and move `Meter.app` to `/Applications`.
 
 **Required after downloading:** the release is not notarized, so macOS refuses to launch it until you clear the quarantine flag the browser attached. Run this once after moving the app:
 
@@ -169,11 +169,18 @@ An ad-hoc signature therefore revokes Meter's own keychain access every time it 
 
 ## CLI
 
-The `meter` CLI uses the same providers and enabled-provider settings as the menu bar app. It fetches fresh usage directly and does not require the app to be running.
+The `meter` CLI uses the same providers and enabled-provider settings as the menu bar app. The app saves observations at startup and every five minutes to `~/Library/Application Support/Meter/usage-cache.json`. By default the CLI reads this file without a network request. It works after the app exits, marking observations older than six minutes as `stale`. If there is no cache, start the app or query directly with `--refresh`.
 
 ```sh
 swift run meter
 swift run meter codex
+swift run meter --short
+swift run meter --short --all-windows
+swift run meter --short --show-reset
+swift run meter --short --max-age 10m
+swift run meter --refresh
+swift run meter watch
+swift run meter cache status
 swift run meter cursor command-code --json
 swift run meter doctor
 swift run meter set-key deepseek
@@ -184,11 +191,39 @@ swift run meter disable deepseek
 
 With no provider argument, `meter` queries the providers enabled in the shared settings. `meter all` also queries disabled providers, while `meter codex` is shorthand for `meter status codex`. The `providers` command lists the current enabled state.
 
+`--short` prints each account's fullest window on one line, for example `Claude 35% · Codex 27%`. Add `--all-windows` to show every window or `--show-reset` to include the reset countdown. `--max-age 10m` marks observations older than ten minutes stale and exits 1 (`s`, `m`, `h`, or `d`; at most seven days). `meter watch` redraws cached values every five seconds in a terminal; `meter watch --refresh` queries once at startup. `meter cache status` shows the last observation and attempt for each account, including a failure reason. Older cache files remain readable and gain attempt metadata on the next write. The cache stores usage observations, never credentials.
+
+The installed `meter` must be on `PATH` for status line integrations. Add these examples to your existing configuration; if a status line already exists, append `meter --short` to its command.
+
+```tmux
+# ~/.tmux.conf, when status-right has no existing content
+set -g status-right '#(meter --short)'
+```
+
+```toml
+# ~/.config/starship.toml
+[custom.meter]
+when = true
+command = "meter --short"
+require_repo = false
+format = "[$output]($style)"
+```
+
+Merge this `statusLine` field into the existing `~/.claude/settings.json` object:
+
+```json
+{
+  "statusLine": { "type": "command", "command": "meter --short", "refreshInterval": 300 }
+}
+```
+
+See the [tmux manual](https://man.openbsd.org/tmux), [Starship custom modules](https://starship.rs/config/), and [Claude Code status line documentation](https://code.claude.com/docs/en/statusline).
+
 `meter set-key <provider>` stores an API key for the providers whose credential Meter cannot find on the machine, reading it from stdin; `meter clear-key <provider>` removes it. `meter doctor` reports where each credential comes from and whether it is present. It makes no network request and never shows a keychain prompt, so it stays usable when a provider is broken. With `--strict` it exits 1 when an enabled provider has no credential.
 
-The default exit status is 0 when at least one provider succeeds. Use `--strict` to exit 1 when only some selected providers fail. The command exits 2 when every selected provider fails and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`. Schema 3 changes no fields; it marks that `snapshots` and doctor's `credentials` follow the order arranged in the menu (or, for named providers, the order typed). That ordering already appeared under schema 2 in 0.4.16–0.4.19 (0.4.19 only for doctor), so read entries by `provider` rather than by position. Schema 4 (0.4.24) marks named accounts: a provider can appear once per account, and a named account's entry carries an `account` field with its name. The default account's entries have no `account` field. 0.4.24 already produced these under schema 3.
+The default exit status is 0 when at least one provider has a usable observation. Use `--strict` to exit 1 for stale observations or unavailable providers. The command exits 2 when none has data and 64 for invalid arguments. JSON output includes a versioned `schemaVersion` envelope and unavailable providers in `snapshots`. Schema 2 renamed Cursor's spend bucket id from `on-demand` to `spend` and added `blocked` to doctor's `availability`. Schema 3 changes no fields; it marks that `snapshots` and doctor's `credentials` follow the order arranged in the menu (or, for named providers, the order typed). That ordering already appeared under schema 2 in 0.4.16–0.4.19 (0.4.19 only for doctor), so read entries by `provider` rather than by position. Schema 4 (0.4.24) marks named accounts: a provider can appear once per account, and a named account's entry carries an `account` field with its name. The default account's entries have no `account` field. 0.4.24 already produced these under schema 3.
 
-The v0.4.24 release also includes `meter-0.4.24-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
+The v0.4.25 release also includes `meter-0.4.25-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh
