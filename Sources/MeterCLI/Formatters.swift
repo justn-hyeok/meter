@@ -139,14 +139,17 @@ enum UsageBarRenderer {
 
 private struct CLIJSONEnvelope: Encodable {
     // 2: Cursor's spend bucket id changed from "on-demand" to "spend".
-    let schemaVersion = 2
+    // 3: snapshots follow the order arranged in the menu, or the order typed, rather than
+    //    a fixed provider order.
+    let schemaVersion = 3
     let generatedAt: Date
     let snapshots: [UsageSnapshot]
 }
 
 private struct CLIDoctorEnvelope: Encodable {
     // 2: availability gained "blocked".
-    let schemaVersion = 2
+    // 3: credentials follow the order arranged in the menu rather than a fixed order.
+    let schemaVersion = 3
     let generatedAt: Date
     let credentials: [CredentialStatus]
 }

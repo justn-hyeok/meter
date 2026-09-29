@@ -163,6 +163,12 @@ public final class UsageStore {
         if persist { settings.providerOrder = order }
     }
 
+    /// Takes up the saved order, which something other than this menu may have changed.
+    public func reloadOrder() {
+        let saved = settings.providerOrder
+        if saved != providerOrder { providerOrder = saved }
+    }
+
     /// Saves the order on screen, ending a drag that moved cards with `persist: false`.
     public func saveOrder() {
         settings.providerOrder = providerOrder
@@ -224,6 +230,10 @@ public final class UsageStore {
     /// Called when the menu opens. Retries anything the background refresh could not read
     /// without a dialog, which is where the keychain prompt now appears.
     public func menuOpened() async {
+        // The order was read once at launch, so a change saved elsewhere since then - the
+        // defaults written by hand, another copy of Meter - would have been overwritten by
+        // the next drag. Opening the menu is when the order is about to be looked at.
+        reloadOrder()
         let stale = ProviderID.allCases.filter { enabled($0) && snapshots[$0]?.state != .live }
         guard !stale.isEmpty else { return }
         for provider in stale {

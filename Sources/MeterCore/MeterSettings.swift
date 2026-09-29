@@ -25,8 +25,12 @@ public struct MeterSettings {
 
     /// The order the user arranged the providers in, shared by the menu and the CLI.
     ///
-    /// Unknown names are dropped and duplicates kept once, and a provider added in a later
+    /// Unknown names are skipped and duplicates kept once, and a provider added in a later
     /// version joins at the end rather than vanishing because the saved list predates it.
+    ///
+    /// Saving keeps the names this build does not know, after the ones it does. Writing only
+    /// the known ones meant that running an older build after a newer one, then dragging a
+    /// card, deleted the newer build's providers from the saved order.
     public var providerOrder: [ProviderID] {
         get {
             var seen = Set<ProviderID>()
@@ -35,7 +39,14 @@ public struct MeterSettings {
                 .filter { seen.insert($0).inserted }
             return saved + ProviderID.allCases.filter { !seen.contains($0) }
         }
-        nonmutating set { defaults.set(newValue.map(\.rawValue), forKey: Self.orderKey) }
+        nonmutating set {
+            var names: [String] = []
+            for name in newValue.map(\.rawValue) where !names.contains(name) { names.append(name) }
+            let unknown = (defaults.stringArray(forKey: Self.orderKey) ?? [])
+                .filter { ProviderID(rawValue: $0) == nil }
+            for name in unknown where !names.contains(name) { names.append(name) }
+            defaults.set(names, forKey: Self.orderKey)
+        }
     }
 
     public func setEnabled(_ enabled: Bool, for provider: ProviderID) {

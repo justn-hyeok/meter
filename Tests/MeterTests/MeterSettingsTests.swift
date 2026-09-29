@@ -84,3 +84,17 @@ import Testing
     settings.setEnabled(false, for: .deepSeek)
     #expect(settings.enabledProviders() == [.claude, .codex, .commandCode])
 }
+
+@Test func savingTheOrderKeepsProvidersFromANewerBuild() throws {
+    let suite = "MeterSettingsTests.unknown.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    // Written by a newer Meter that knows a provider this one does not.
+    defaults.set(["claude", "future-ai", "codex"], forKey: "providers.order")
+    let settings = MeterSettings(defaults: defaults)
+    #expect(settings.providerOrder.prefix(2) == [.claude, .codex])
+
+    settings.providerOrder = [.codex, .claude, .cursor, .deepSeek, .commandCode]
+    #expect(defaults.stringArray(forKey: "providers.order")
+        == ["codex", "claude", "cursor", "deepseek", "command-code", "future-ai"])
+}

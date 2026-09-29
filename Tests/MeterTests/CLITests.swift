@@ -39,7 +39,7 @@ import Testing
     )
 
     let output = try CLIJSONFormatter.status([snapshot], now: now)
-    #expect(output.contains(#""schemaVersion" : 2"#))
+    #expect(output.contains(#""schemaVersion" : 3"#))
     #expect(output.contains(#""provider" : "codex""#))
     #expect(output.contains("2023-11-14T22:13:20Z"))
 }

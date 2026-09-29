@@ -12,7 +12,7 @@ struct CLIResult {
 }
 
 struct MeterCLIApplication {
-    static let version = "0.4.19"
+    static let version = "0.4.20"
 
     let service: UsageService
     let settings: MeterSettings

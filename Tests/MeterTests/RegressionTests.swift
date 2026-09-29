@@ -485,3 +485,19 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     #expect(settings.providerOrder == store.providerOrder)
     #expect(settings.providerOrder != before)
 }
+
+@MainActor
+@Test func openingTheMenuPicksUpAnOrderSavedElsewhere() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false)
+
+    // Changed behind the running menu's back.
+    settings.providerOrder = [.deepSeek, .codex, .claude, .cursor, .commandCode]
+    await store.menuOpened()
+    #expect(store.providerOrder == [.deepSeek, .codex, .claude, .cursor, .commandCode])
+
+    // So the next drag starts from it rather than writing the launch-time order back.
+    store.move(.claude, to: .deepSeek)
+    #expect(settings.providerOrder == [.claude, .deepSeek, .codex, .cursor, .commandCode])
+}
