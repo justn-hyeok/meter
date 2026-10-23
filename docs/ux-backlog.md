@@ -22,3 +22,19 @@ remove an entry when it ships.
   instead of "sign in with `claude`" or "allow keychain access".
 - Reordering has no visible handle; nothing says a tile can be dragged.
 - OpenRouter cannot show credits left: that endpoint needs a management key.
+
+## Tokens view
+
+- Totals are dominated by cache reads (873M of a week's Claude Opus total), so "1B tokens"
+  says little about real work. Consider showing fresh input + output first, with cache as
+  a secondary figure or a toggle.
+- Below four or five models the view leaves a large empty area, because it takes the
+  height of the tile grid. A per-tool or per-day breakdown could use that space.
+- 30 days of Claude Code logs takes about 2.7 s to read (release build) and is re-read on
+  every open after a minute. An incremental index of what was already read would make it
+  instant.
+- "Last used" shows Claude Code on a subagent's model (Sonnet) when the main session is on
+  Opus. Showing the main session's model, or both, would match what people mean by
+  "which model am I using".
+- Codex archives older sessions as `.jsonl.zst`, which are not read, so Codex history
+  beyond the active sessions is missing.
