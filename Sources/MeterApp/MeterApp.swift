@@ -5,11 +5,12 @@ import MeterCore
 @main
 struct MeterApp: App {
     @State private var store = UsageStore()
+    @State private var tokens = TokenStore()
     @State private var hotKey: GlobalHotKey?
 
     var body: some Scene {
         MenuBarExtra {
-            MeterMenu(store: store)
+            MeterMenu(store: store, tokens: tokens)
         } label: {
             // Back to the one form that actually paints. MenuBarExtra reserves space for an
             // arbitrary label view without drawing it, and Text(Image(systemName:)) drew the
@@ -33,29 +34,51 @@ struct MeterApp: App {
     }
 }
 
+/// The two things the menu answers: how much of each plan is left, and what spent it.
+enum MenuTab: String, CaseIterable, Identifiable {
+    case limits = "Limits"
+    case tokens = "Tokens"
+    var id: String { rawValue }
+}
+
 private struct MeterMenu: View {
     @Bindable var store: UsageStore
+    @Bindable var tokens: TokenStore
+    @State private var tab = MenuTab.limits
     @State private var drag = CardDrag()
     @State private var cardsHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
-            MenuHeader(store: store)
+            MenuHeader(store: store, tokens: tokens, tab: $tab)
             // Every tile is one fixed size, so the menu's height follows only from how many
             // providers are on: it no longer grows and shrinks as they answer or fail, and it
             // has no empty band of window below the last tile. It scrolls only when the tiles
             // outgrow the screen.
-            ScrollView(.vertical) {
-                VStack(spacing: 10) {
-                    TileGrid(store: store, drag: drag, animation: reorderAnimation, moveByKeyboard: moveByKeyboard)
-                    HiddenProviders(store: store)
+            // The token view takes the height the tiles set, so switching tabs never resizes
+            // the menu under the pointer; it scrolls inside that height instead.
+            ZStack(alignment: .top) {
+                ScrollView(.vertical) {
+                    VStack(spacing: 10) {
+                        TileGrid(store: store, drag: drag, animation: reorderAnimation, moveByKeyboard: moveByKeyboard)
+                        HiddenProviders(store: store)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardsHeight = $0 }
                 }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardsHeight = $0 }
+                .scrollBounceBehavior(.basedOnSize)
+                .opacity(tab == .limits ? 1 : 0)
+                .allowsHitTesting(tab == .limits)
+                .accessibilityHidden(tab != .limits)
+
+                if tab == .tokens {
+                    ScrollView(.vertical) { TokensView(tokens: tokens) }
+                        .scrollBounceBehavior(.basedOnSize)
+                        .task { await tokens.load() }
+                }
             }
-            .scrollBounceBehavior(.basedOnSize)
             .frame(height: min(cardsHeight, maxCardsHeight))
             Divider()
             MenuFooter()
@@ -66,7 +89,10 @@ private struct MeterMenu: View {
         .coordinateSpace(.named(CardDrag.space))
         // Opening the menu is the moment a keychain dialog is welcome; the five-minute
         // refresh never raises one.
-        .background(MenuOpenObserver { Task { await store.menuOpened() } })
+        .background(MenuOpenObserver {
+            Task { await store.menuOpened() }
+            if tab == .tokens { Task { await tokens.load() } }
+        })
     }
 }
 
@@ -105,17 +131,31 @@ extension MeterMenu {
 
 private struct MenuHeader: View {
     @Bindable var store: UsageStore
+    @Bindable var tokens: TokenStore
+    @Binding var tab: MenuTab
 
     var body: some View {
         HStack(spacing: 8) {
+            Picker("View", selection: $tab) {
+                ForEach(MenuTab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
+            Spacer()
             // Relative, because the question is "how old is this", and a clock time made the
             // reader do the subtraction against the clock in the corner of the screen.
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                Text(updatedText(now: context.date))
+            if tab == .limits {
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Text(updatedText(now: context.date))
+                }
             }
-            Spacer()
-            if store.isRefreshing { ProgressView().controlSize(.small) }
-            Button { Task { await store.refreshAll(interactive: true) } } label: {
+            if store.isRefreshing || tokens.isLoading { ProgressView().controlSize(.small) }
+            Button {
+                Task { await store.refreshAll(interactive: true) }
+                if tab == .tokens { Task { await tokens.load(force: true) } }
+            } label: {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.plain)
