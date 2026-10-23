@@ -8,6 +8,14 @@ private func numericValue(_ value: Any?) -> Double? {
     return nil
 }
 
+/// With and without fractional seconds: OpenCode Go's weekly reset came back as
+/// "…T00:00:00.000Z", and OpenRouter documents its resets the same way.
+private func isoDate(_ value: String) -> Date? {
+    let withFraction = ISO8601DateFormatter()
+    withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return withFraction.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+}
+
 /// Names a rate-limit window from its length. Both Codex paths use this, because naming
 /// the same window differently depending on which one answered is how a weekly limit came
 /// to be shown as a five-hour one.
@@ -340,6 +348,123 @@ enum DeepSeekUsageParser {
     }
 }
 
+/// Reads `GET /api/v1/key`, the one usage route an ordinary OpenRouter key may call.
+/// The account balance lives at `/api/v1/credits`, which answers only to a management key,
+/// so asking for it with the key a user runs models with would fail on every refresh.
+struct OpenRouterUsageProvider: UsageProvider {
+    static let environmentKey = "OPENROUTER_API_KEY"
+
+    let id = ProviderID.openRouter
+    private let store: SecretStore
+    private let environment: [String: String]
+    private let account: Account
+
+    init(
+        store: SecretStore = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        account: Account = Account(.openRouter)
+    ) {
+        self.store = store
+        self.environment = environment
+        self.account = account
+    }
+
+    /// The same precedence as DeepSeek: the shell's variable for the default account, then
+    /// the stored key, which is all a named account or an app launched from Finder has.
+    func apiKey() -> String? {
+        if account.name == nil, let key = environment[Self.environmentKey], !key.isEmpty { return key }
+        return store.secret(for: account)
+    }
+
+    func fetch() async -> UsageSnapshot {
+        guard let key = apiKey() else {
+            let hint = account.name.map { "Run 'meter set-key openrouter --name \($0)'." }
+                ?? "Run 'meter set-key openrouter' or paste one in the Meter menu."
+            return .unavailable(id, "No API key. \(hint)")
+        }
+        do {
+            var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/key")!)
+            request.timeoutInterval = 15
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            let (data, response) = try await URLSession.shared.data(for: request, delegate: SameHostRedirectsOnly())
+            guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+            guard http.statusCode == 200 else { throw ProviderHTTPError.unexpectedStatus(http.statusCode) }
+            return try OpenRouterUsageParser.parse(data)
+        } catch {
+            return .unavailable(id, "OpenRouter unavailable: \(error.localizedDescription)")
+        }
+    }
+}
+
+enum OpenRouterUsageParser {
+    static func parse(_ data: Data, now: Date = .now) throws -> UsageSnapshot {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let key = root["data"] as? [String: Any] else {
+            throw URLError(.cannotParseResponse)
+        }
+        let budgets = key["budgets"] as? [[String: Any]] ?? []
+        var buckets: [UsageBucket] = []
+
+        // The key's own cap, absent when the key is unlimited. `limit_reset` names only the
+        // interval ("monthly"), so the instant comes from the key's entry among the budgets,
+        // which carries a real `resets_at`; without that entry there is no reset to show.
+        if let limit = numericValue(key["limit"]), let remaining = numericValue(key["limit_remaining"]) {
+            let ownBudget = budgets.first { $0["scope"] as? String == "key_limit" }
+            buckets.append(.init(
+                id: "key-limit",
+                label: "Key limit",
+                used: max(0, limit - remaining),
+                limit: limit,
+                remaining: remaining,
+                resetAt: (ownBudget?["resets_at"] as? String).flatMap(isoDate),
+                unit: .usd
+            ))
+        }
+
+        // The budget that blocks requests first, when it is someone else's: a guardrail or
+        // workspace cap an admin set. When it is the key's own limit it is already shown above.
+        if let budget = key["effective_budget"] as? [String: Any],
+           budget["scope"] as? String != "key_limit",
+           let limit = numericValue(budget["limit_usd"]),
+           let spent = numericValue(budget["spend_usd"]) {
+            let interval = (budget["reset_interval"] as? String).map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            buckets.append(.init(
+                id: "budget",
+                label: interval.map { "\($0) budget" } ?? "Budget",
+                used: spent,
+                limit: limit,
+                remaining: numericValue(budget["remaining_usd"]) ?? limit - spent,
+                resetAt: (budget["resets_at"] as? String).flatMap(isoDate),
+                unit: .usd
+            ))
+        }
+
+        // Spend for the current UTC month, which the docs define exactly, so its rollover is
+        // the first instant of next month in UTC.
+        if let monthly = numericValue(key["usage_monthly"]) {
+            buckets.append(.init(
+                id: "monthly-spend",
+                label: "Spend this month",
+                used: monthly,
+                limit: nil,
+                remaining: nil,
+                resetAt: startOfNextUTCMonth(after: now),
+                unit: .usd
+            ))
+        }
+
+        guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
+        return .init(provider: .openRouter, buckets: buckets, fetchedAt: now, source: "OpenRouter Key API", state: .live, message: nil)
+    }
+
+    private static func startOfNextUTCMonth(after date: Date) -> Date? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let start = calendar.date(from: calendar.dateComponents([.year, .month], from: date))
+        return start.flatMap { calendar.date(byAdding: .month, value: 1, to: $0) }
+    }
+}
+
 /// Issues an authenticated JSON request using headers from a `CredentialSource`.
 enum AuthenticatedRequest {
     static func json(
@@ -472,18 +597,11 @@ enum OpenCodeGoUsageParser {
         let windows = [("rolling", "five-hour", "5-hour"), ("weekly", "weekly", "Weekly"), ("monthly", "monthly", "Monthly")]
         let buckets: [UsageBucket] = windows.compactMap { key, id, label in
             guard let window = usage[key] as? [String: Any], let percent = numericValue(window["percent"]) else { return nil }
-            let resetAt = (window["resetsAt"] as? String).flatMap(Self.date)
+            let resetAt = (window["resetsAt"] as? String).flatMap(isoDate)
             return .init(id: id, label: label, used: percent, limit: 100, remaining: max(0, 100 - percent), resetAt: resetAt, unit: .percent)
         }
         guard !buckets.isEmpty else { throw URLError(.cannotParseResponse) }
         return .init(provider: .openCodeGo, buckets: buckets, fetchedAt: now, source: "OpenCode Go usage", state: .live, message: nil)
-    }
-
-    /// With and without fractional seconds: the weekly reset came back as "…T00:00:00.000Z".
-    private static func date(_ value: String) -> Date? {
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return withFraction.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }
 

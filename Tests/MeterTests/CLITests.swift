@@ -322,12 +322,12 @@ private struct StubProvider: UsageProvider {
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let settings = MeterSettings(defaults: defaults)
-    settings.providerOrder = [.commandCode, .cursor, .codex, .claude, .deepSeek, .openCodeGo]
+    settings.providerOrder = [.commandCode, .cursor, .codex, .claude, .deepSeek, .openCodeGo, .openRouter]
 
     let names = CLITextFormatter.providers(settings: settings, accounts: ProviderID.allCases.map { Account($0) })
         .split(separator: "\n")
         .map { $0.split(separator: " ", omittingEmptySubsequences: true)[1] }
-    #expect(names == ["command-code", "cursor", "codex", "claude", "deepseek", "opencode-go"])
+    #expect(names == ["command-code", "cursor", "codex", "claude", "deepseek", "opencode-go", "openrouter"])
 }
 
 @Test func parsesNamedAccounts() throws {

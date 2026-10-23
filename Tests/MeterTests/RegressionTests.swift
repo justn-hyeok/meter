@@ -415,19 +415,19 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     let (settings, cleanup) = try isolatedSettingsForRegression()
     defer { cleanup() }
     let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
-    #expect(store.providerOrder == [.codex, .claude, .cursor, .deepSeek, .commandCode, .openCodeGo])
+    #expect(store.providerOrder == [.codex, .claude, .cursor, .deepSeek, .commandCode, .openCodeGo, .openRouter])
 
     // Down the list: lands after the card it passed.
     store.move(.codex, to: .cursor)
-    #expect(store.providerOrder == [.claude, .cursor, .codex, .deepSeek, .commandCode, .openCodeGo])
+    #expect(store.providerOrder == [.claude, .cursor, .codex, .deepSeek, .commandCode, .openCodeGo, .openRouter])
 
     // Up the list: lands before it.
     store.move(.commandCode, to: .claude)
-    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek, .openCodeGo])
+    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek, .openCodeGo, .openRouter])
 
     // Dropping on itself changes nothing.
     store.move(.cursor, to: .cursor)
-    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek, .openCodeGo])
+    #expect(store.providerOrder == [.commandCode, .claude, .cursor, .codex, .deepSeek, .openCodeGo, .openRouter])
 
     // Saved, so a restart comes back the same way.
     #expect(settings.providerOrder == store.providerOrder)
@@ -477,7 +477,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 
     // Passing over cards moves them on screen without writing anything.
     store.move(.codex, to: .deepSeek, persist: false)
-    #expect(store.providerOrder == [.claude, .cursor, .deepSeek, .codex, .commandCode, .openCodeGo])
+    #expect(store.providerOrder == [.claude, .cursor, .deepSeek, .codex, .commandCode, .openCodeGo, .openRouter])
     #expect(settings.providerOrder == before)
 
     // Esc: the old order comes back.
@@ -498,13 +498,13 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
 
     // Changed behind the running menu's back.
-    settings.providerOrder = [.deepSeek, .codex, .claude, .cursor, .commandCode, .openCodeGo]
+    settings.providerOrder = [.deepSeek, .codex, .claude, .cursor, .commandCode, .openCodeGo, .openRouter]
     await store.menuOpened()
-    #expect(store.providerOrder == [.deepSeek, .codex, .claude, .cursor, .commandCode, .openCodeGo])
+    #expect(store.providerOrder == [.deepSeek, .codex, .claude, .cursor, .commandCode, .openCodeGo, .openRouter])
 
     // So the next drag starts from it rather than writing the launch-time order back.
     store.move(.claude, to: .deepSeek)
-    #expect(settings.providerOrder == [.claude, .deepSeek, .codex, .cursor, .commandCode, .openCodeGo])
+    #expect(settings.providerOrder == [.claude, .deepSeek, .codex, .cursor, .commandCode, .openCodeGo, .openRouter])
 }
 
 @MainActor
@@ -517,7 +517,7 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 
     // `meter disable codex` while the app runs.
     settings.setEnabled(false, for: .codex)
-    settings.providerOrder = [.claude, .codex, .cursor, .deepSeek, .commandCode, .openCodeGo]
+    settings.providerOrder = [.claude, .codex, .cursor, .deepSeek, .commandCode, .openCodeGo, .openRouter]
 
     // The background refresh takes up the switch but leaves the order alone.
     store.reloadSettings(includingOrder: false)

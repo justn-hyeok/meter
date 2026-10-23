@@ -40,78 +40,50 @@ private struct MeterMenu: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        // Once per render rather than once per row: every row compares against it.
-        let tightest = store.tightestLimit
         VStack(spacing: 0) {
-            HStack {
-                Text("Meter").font(.headline)
-                Spacer()
-                if store.isRefreshing { ProgressView().controlSize(.small) }
-                Button { Task { await store.refreshAll(interactive: true) } } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.plain)
-            }
-            .padding(14)
-
-            Divider()
-            // Scrolls once the cards outgrow the screen. Each named account adds a card, and a
-            // menu taller than the screen pushed the settings and Quit out of reach.
+            MenuHeader(store: store)
+            // Every tile is one fixed size, so the menu's height follows only from how many
+            // providers are on: it no longer grows and shrinks as they answer or fail, and it
+            // has no empty band of window below the last tile. It scrolls only when the tiles
+            // outgrow the screen.
             ScrollView(.vertical) {
-                VStack(spacing: 8) {
-                    ForEach(store.order) { account in
-                        ProviderCard(account: account, store: store, tightest: tightest, drag: drag, animation: reorderAnimation)
-                            // The carried card leaves an empty place behind: the card itself is what
-                            // moves under the pointer, and a faded copy made it look like two.
-                            .opacity(drag.account == account ? 0 : 1)
-                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(CardDrag.space)) } action: {
-                                drag.frames[account] = $0
-                            }
-                            .accessibilityAction(named: "Move up") { moveByKeyboard(account, by: -1) }
-                            .accessibilityAction(named: "Move down") { moveByKeyboard(account, by: 1) }
-                    }
+                VStack(spacing: 10) {
+                    TileGrid(store: store, drag: drag, animation: reorderAnimation, moveByKeyboard: moveByKeyboard)
+                    HiddenProviders(store: store)
                 }
-                .padding(12)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardsHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
             .frame(height: min(cardsHeight, maxCardsHeight))
-            MeterLegend().padding(.horizontal, 12).padding(.bottom, 10)
             Divider()
-            SettingsRows(store: store)
-            Divider()
-            HStack {
-                Text(store.lastRefresh.map { "Updated \($0.formatted(date: .omitted, time: .shortened))" } ?? "Not updated")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
-            }
-            .font(.caption)
-            .padding(12)
+            MenuFooter()
         }
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
-        .overlay(alignment: .topLeading) { liftedCard }
+        .overlay(alignment: .topLeading) { liftedTile }
         .coordinateSpace(.named(CardDrag.space))
         // Opening the menu is the moment a keychain dialog is welcome; the five-minute
         // refresh never raises one.
         .background(MenuOpenObserver { Task { await store.menuOpened() } })
     }
-
 }
 
 extension MeterMenu {
-    /// What is left of the screen once the header, legend, settings and footer are placed.
+    /// What is left of the screen once the header and footer are placed.
     private var maxCardsHeight: CGFloat {
-        max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 240)
+        max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 160)
     }
 
-    /// The card being carried, drawn at full size under the pointer with a shadow to show
-    /// it is off the list. It moves only up and down, the one direction the list reorders.
-    @ViewBuilder private var liftedCard: some View {
+    /// The tile being carried, drawn at full size under the pointer with a shadow to show
+    /// it is off the grid.
+    @ViewBuilder private var liftedTile: some View {
         if let account = drag.account, let frame = drag.liftedFrame {
-            ProviderCard(account: account, store: store, tightest: store.tightestLimit, drag: drag, animation: nil, lifted: true)
+            ProviderTile(account: account, store: store, drag: drag, animation: nil, lifted: true)
                 .frame(width: frame.width, height: frame.height)
-                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: MeterStyle.tileRadius))
+                .overlay(RoundedRectangle(cornerRadius: MeterStyle.tileRadius).strokeBorder(.separator))
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
                 .offset(x: frame.minX, y: frame.minY)
                 .allowsHitTesting(false)
@@ -123,46 +95,453 @@ extension MeterMenu {
         reduceMotion ? nil : .snappy(duration: 0.2)
     }
 
+    /// Steps past switched-off providers, which have no tile, so every move is one you see.
     private func moveByKeyboard(_ account: Account, by step: Int) {
-        let order = store.order
-        guard let index = order.firstIndex(of: account), order.indices.contains(index + step) else { return }
-        withAnimation(reorderAnimation) { store.move(account, to: order[index + step]) }
+        let visible = store.order.filter(store.enabled)
+        guard let index = visible.firstIndex(of: account), visible.indices.contains(index + step) else { return }
+        withAnimation(reorderAnimation) { store.move(account, to: visible[index + step]) }
     }
 }
 
-private struct SettingsRows: View {
+private struct MenuHeader: View {
     @Bindable var store: UsageStore
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Relative, because the question is "how old is this", and a clock time made the
+            // reader do the subtraction against the clock in the corner of the screen.
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(updatedText(now: context.date))
+            }
+            Spacer()
+            if store.isRefreshing { ProgressView().controlSize(.small) }
+            Button { Task { await store.refreshAll(interactive: true) } } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.plain)
+            .help("Refresh all")
+            .accessibilityLabel("Refresh all")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func updatedText(now: Date) -> String {
+        guard let last = store.lastRefresh else { return "Not updated yet" }
+        if now.timeIntervalSince(last) < 60 { return "Updated just now" }
+        return "Updated \(last.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))"
+    }
+}
+
+private struct MenuFooter: View {
     @State private var loginItemFailure: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if LoginItem.isAvailable {
-                Toggle("Launch at login", isOn: Binding(
-                    get: { LoginItem.isEnabled },
-                    set: { newValue in
-                        do {
-                            try LoginItem.setEnabled(newValue)
-                            loginItemFailure = nil
-                        } catch {
-                            loginItemFailure = error.localizedDescription
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                if LoginItem.isAvailable {
+                    Toggle("Launch at login", isOn: Binding(
+                        get: { LoginItem.isEnabled },
+                        set: { newValue in
+                            do {
+                                try LoginItem.setEnabled(newValue)
+                                loginItemFailure = nil
+                            } catch {
+                                loginItemFailure = error.localizedDescription
+                            }
                         }
-                    }
-                ))
+                    ))
+                    .toggleStyle(.checkbox)
+                }
+                Spacer()
+                // The shortcut was in the README and nowhere on screen.
+                Text("⌃⌥M").foregroundStyle(.tertiary).help("Opens and closes Meter from anywhere")
+                Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
             }
             if let loginItemFailure {
                 Text(loginItemFailure).foregroundStyle(.red)
             }
         }
-        // Checkboxes here too: the provider rows stopped using blue switches so the bars
-        // could own blue, and leaving these as switches made them the brightest thing left.
-        .toggleStyle(.checkbox)
         .controlSize(.small)
-        .font(.callout)
-        // Pinned to the leading edge like the legend and the footer; left to itself the
-        // stack sized to its content and sat centred in the panel.
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+}
+
+// MARK: - Grid
+
+/// Enabled providers as tiles of one size, two to a row. An odd one out keeps its size
+/// rather than stretching across the row.
+private struct TileGrid: View {
+    @Bindable var store: UsageStore
+    let drag: CardDrag
+    let animation: Animation?
+    let moveByKeyboard: (Account, Int) -> Void
+
+    var body: some View {
+        let visible = store.order.filter(store.enabled)
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            ForEach(visible) { account in
+                ProviderTile(account: account, store: store, drag: drag, animation: animation)
+                    // The carried tile leaves an empty place behind: the tile itself is
+                    // what moves under the pointer, and a faded copy made it look like two.
+                    .opacity(drag.account == account ? 0 : 1)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(CardDrag.space)) } action: {
+                        drag.frames[account] = $0
+                    }
+                    .accessibilityAction(named: "Move up") { moveByKeyboard(account, -1) }
+                    .accessibilityAction(named: "Move down") { moveByKeyboard(account, 1) }
+            }
+        }
+    }
+}
+
+/// Switched-off providers, as chips to switch them back on. They have nothing to show, so
+/// they do not get a tile, and a row of checkboxes among the figures was the noisiest thing
+/// in the old menu.
+private struct HiddenProviders: View {
+    @Bindable var store: UsageStore
+
+    var body: some View {
+        let hidden = store.order.filter { !store.enabled($0) }
+        if !hidden.isEmpty {
+            FlowLayout(spacing: 6) {
+                ForEach(hidden) { account in
+                    Button { store.setEnabled(true, for: account) } label: {
+                        Label(account.title, systemImage: "plus")
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .overlay(Capsule().strokeBorder(.tertiary, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Show \(account.title)")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// Left-to-right, wrapping onto a new line when the next item would not fit.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let placed = place(subviews, width: width)
+        return CGSize(width: placed.map(\.maxX).max() ?? 0, height: placed.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, place(subviews, width: bounds.width)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: .unspecified)
+        }
+    }
+
+    private func place(_ subviews: Subviews, width: CGFloat) -> [CGRect] {
+        var frames: [CGRect] = []
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += lineHeight + spacing
+                lineHeight = 0
+            }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+        return frames
+    }
+}
+
+// MARK: - Tile
+
+private struct ProviderTile: View {
+    let account: Account
+    @Bindable var store: UsageStore
+    let drag: CardDrag
+    let animation: Animation?
+    /// The copy drawn under the pointer during a drag: no drag surface of its own.
+    var lifted = false
+
+    private var snapshot: UsageSnapshot? { store.snapshots[account] }
+    private var severity: Severity { Severity(snapshot?.buckets.compactMap(\.fractionUsed).max()) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                if let snapshot, !snapshot.buckets.isEmpty {
+                    TileContent(buckets: snapshot.buckets)
+                        .opacity(snapshot.state == .stale || isIdle(snapshot) ? 0.55 : 1)
+                    if snapshot.state == .stale { staleNote(snapshot) }
+                } else {
+                    Text(snapshot?.message ?? "Waiting for refresh…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(store.needsKey(account) ? 3 : 6)
+                        .help(snapshot?.message ?? "")
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+            .overlay { if !lifted { dragSurface } }
+            // Outside the drag surface: a drag that starts on a text field or a button
+            // took the click away from it whenever the pointer drifted a point.
+            if store.needsKey(account) {
+                KeyField(provider: account.provider, store: store)
+            }
+        }
+        .padding(12)
+        .frame(height: MeterStyle.tileHeight)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: MeterStyle.tileRadius))
+        .overlay {
+            // A tile at its limit is outlined, so it is found before any figure is read.
+            if let color = severity.color {
+                RoundedRectangle(cornerRadius: MeterStyle.tileRadius).strokeBorder(color.opacity(0.7), lineWidth: 1)
+            }
+        }
+        .contextMenu {
+            Button("Refresh \(account.title)") { Task { await store.refresh(account, interactive: true) } }
+            Button("Hide \(account.title)") { store.setEnabled(false, for: account) }
+        }
+    }
+
+    /// Every window at zero with no reset scheduled: an account that has not been used,
+    /// which should not look as present as one that is working.
+    private func isIdle(_ snapshot: UsageSnapshot) -> Bool {
+        snapshot.buckets.allSatisfy { $0.fractionUsed == 0 && $0.resetAt == nil }
+    }
+
+    private var header: some View {
+        Text(account.title)
+            .font(.callout.weight(.semibold))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Figures that stopped updating used to differ from fresh ones by a faint icon whose
+    /// explanation was only a tooltip. The age is now written on the tile.
+    private func staleNote(_ snapshot: UsageSnapshot) -> some View {
+        Label {
+            Text("From \(snapshot.fetchedAt.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))")
+        } icon: {
+            Image(systemName: "clock.badge.exclamationmark")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .help(snapshot.message ?? "Showing the last figures that arrived.")
+    }
+
+    /// Covers the title and the figures, so the tile can be picked up anywhere but its controls.
+    private var dragSurface: some View {
+        CardDragSource(
+            account: account,
+            help: snapshot?.state == .stale ? (snapshot?.message ?? "Showing the last figures that arrived.") : nil,
+            onBegin: { point in drag.begin(account, at: point, store: store) },
+            onMove: { point in drag.moved(to: point, store: store, animation: animation) },
+            onEnd: { dropped in drag.finish(store: store, commit: dropped, animation: animation) }
+        )
+        .accessibilityHidden(true)
+    }
+}
+
+/// The arcs and the headline figure, then every window on a line of its own.
+private struct TileContent: View {
+    let buckets: [UsageBucket]
+
+    /// The windows the arcs draw: the fullest first, outermost, so the arc that matters is
+    /// the longest one.
+    private var arcs: [UsageBucket] {
+        Array(buckets.filter { $0.fractionUsed != nil }
+            .sorted { $0.fractionUsed! > $1.fractionUsed! }
+            .prefix(MeterStyle.maxArcs))
+    }
+
+    /// The windows that get a line of their own: all of them when they fit, otherwise the
+    /// fullest first, keeping one line for the count of the rest.
+    private var listed: [UsageBucket] {
+        guard buckets.count > MeterStyle.maxRows else { return buckets }
+        let kept = Set(buckets.sorted { ($0.fractionUsed ?? -1) > ($1.fractionUsed ?? -1) }
+            .prefix(MeterStyle.maxRows - 1).map(\.id))
+        return buckets.filter { kept.contains($0.id) }
+    }
+
+    private var folded: [UsageBucket] {
+        let shown = Set(listed.map(\.id))
+        return buckets.filter { !shown.contains($0.id) }
+    }
+
+    /// The fullest window, or, for an account measured only in money, its first figure.
+    private var headline: UsageBucket? { arcs.first ?? buckets.first }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                if !arcs.isEmpty {
+                    ArcGauge(fractions: arcs.map { $0.fractionUsed ?? 0 })
+                        .frame(width: 52, height: 52)
+                        .accessibilityHidden(true)
+                }
+                if let headline {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(UsageFormat.value(headline))
+                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Severity(headline.fractionUsed).color ?? .primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        // The reset is also on the window's own line below, so it is the
+                        // part to give up when a narrow tile cannot fit both.
+                        ViewThatFits(in: .horizontal) {
+                            Text(caption(headline))
+                            Text(headline.label).truncationMode(.tail)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    }
+                }
+            }
+            // One figure is already the headline; listing it again under itself says nothing.
+            if buckets.count > 1 {
+                VStack(spacing: 3) {
+                    ForEach(listed) { bucket in
+                        WindowRow(bucket: bucket, arcIndex: arcs.firstIndex { $0.id == bucket.id })
+                    }
+                    if !folded.isEmpty {
+                        Text("+\(folded.count) more")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, 12)
+                            .help(folded.map { "\($0.label): \(UsageFormat.value($0))" }.joined(separator: "\n"))
+                    }
+                }
+            }
+        }
+    }
+
+    private func caption(_ bucket: UsageBucket) -> String {
+        guard let reset = UsageFormat.reset(bucket) else { return bucket.label }
+        return "\(bucket.label) · \(reset)"
+    }
+}
+
+/// One window: the dot that names its arc, label, figure, reset.
+private struct WindowRow: View {
+    let bucket: UsageBucket
+    let arcIndex: Int?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(arcIndex.map { MeterStyle.arcColor($0, fraction: bucket.fractionUsed) } ?? .clear)
+                .frame(width: 6, height: 6)
+            Text(bucket.label)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            Text(UsageFormat.value(bucket))
+                .monospacedDigit()
+                .fontWeight(.medium)
+                .foregroundStyle(Severity(bucket.fractionUsed).color ?? .primary)
+                .lineLimit(1)
+            Text(UsageFormat.reset(bucket) ?? "—")
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+                .frame(minWidth: 22, alignment: .trailing)
+        }
+        .font(.caption)
+        .help(UsageFormat.detail(bucket))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Up to three concentric 270° arcs, open at the bottom like a dial, outermost first.
+private struct ArcGauge: View {
+    let fractions: [Double]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            ZStack {
+                ForEach(Array(fractions.enumerated()), id: \.offset) { index, fraction in
+                    let inset = CGFloat(index) * (MeterStyle.arcWidth + MeterStyle.arcGap)
+                    let used = min(max(fraction, 0), 1)
+                    ZStack {
+                        arc(to: 1).stroke(MeterStyle.track, style: stroke)
+                        // A sliver even at zero, so an empty window still shows where it starts.
+                        arc(to: max(used, 0.015)).stroke(MeterStyle.arcColor(index, fraction: fraction), style: stroke)
+                    }
+                    .padding(inset + MeterStyle.arcWidth / 2)
+                }
+            }
+            .frame(width: size, height: size)
+        }
+    }
+
+    private var stroke: StrokeStyle { StrokeStyle(lineWidth: MeterStyle.arcWidth, lineCap: .round) }
+
+    /// From the lower left, over the top, to the lower right.
+    private func arc(to fraction: Double) -> some Shape {
+        Circle()
+            .trim(from: 0, to: MeterStyle.arcSweep * fraction)
+            .rotation(.degrees(90 + (1 - MeterStyle.arcSweep) * 180))
+    }
+}
+
+/// How close a window is to its limit, as the one thing colour is allowed to say.
+private enum Severity {
+    case calm, warning, critical
+
+    init(_ fraction: Double?) {
+        guard let fraction else { self = .calm; return }
+        if fraction >= 0.95 { self = .critical }
+        else if fraction >= TightestLimit.threshold { self = .warning }
+        else { self = .calm }
+    }
+
+    var color: Color? {
+        switch self {
+        case .calm: nil
+        case .warning: MeterStyle.warning
+        case .critical: MeterStyle.critical
+        }
+    }
+}
+
+/// The tile design's tokens. Arcs are drawn in three steps of the label colour, so every
+/// colour that is not grey means a limit is close: orange from 80%, red from 95%.
+enum MeterStyle {
+    static let tileRadius: CGFloat = 12
+    /// Fits the title, the arcs and three windows. Every tile is this tall whatever it holds,
+    /// so a tile picked up and put down elsewhere never reflows the grid around it.
+    static let tileHeight: CGFloat = 168
+    /// Windows listed under the arcs before the rest fold into a "+N more" line.
+    static let maxRows = 3
+    static let maxArcs = 3
+    /// Of a full circle; 1 draws closed rings.
+    static let arcSweep = 0.75
+    static let arcWidth: CGFloat = 5
+    static let arcGap: CGFloat = 2
+    static let track = Color.primary.opacity(0.1)
+    static let warning = Color(nsColor: .systemOrange)
+    static let critical = Color(nsColor: .systemRed)
+    private static let arcSteps: [Double] = [0.85, 0.55, 0.32]
+
+    static func arcColor(_ index: Int, fraction: Double?) -> Color {
+        Severity(fraction).color ?? Color.primary.opacity(arcSteps[min(index, arcSteps.count - 1)])
     }
 }
 
@@ -200,210 +579,3 @@ private struct KeyField: View {
         .font(.caption)
     }
 }
-
-private struct ProviderCard: View {
-    let account: Account
-    @Bindable var store: UsageStore
-    let tightest: BucketKey?
-    let drag: CardDrag
-    let animation: Animation?
-    /// The copy drawn under the pointer during a drag: no drag surface of its own.
-    var lifted = false
-
-    var body: some View {
-        if store.enabled(account) {
-            VStack(alignment: .leading, spacing: 5) {
-                VStack(alignment: .leading, spacing: 5) {
-                    header
-                    if let snapshot = store.snapshots[account], !snapshot.buckets.isEmpty {
-                        ForEach(snapshot.buckets) { bucket in
-                            UsageRow(bucket: bucket, isTightest: tightest == BucketKey(account: account, bucketID: bucket.id))
-                        }
-                        .opacity(snapshot.state == .stale ? 0.55 : 1)
-                    } else {
-                        Text(store.snapshots[account]?.message ?? "Waiting for refresh…")
-                            .font(.callout).foregroundStyle(.secondary)
-                    }
-                }
-                .overlay { if !lifted { dragSurface } }
-                // Outside the drag surface: a drag that starts on a text field or a button
-                // took the click away from it whenever the pointer drifted a point.
-                if store.needsKey(account) {
-                    KeyField(provider: account.provider, store: store)
-                }
-            }
-            .padding(12)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(alignment: Alignment(horizontal: .trailing, vertical: .providerTitle)) {
-                checkbox.padding(.trailing, 12)
-            }
-        } else {
-            // A provider that is switched off has nothing to show, so it does not get a card
-            // to show it in - just the row you turn it back on from.
-            header
-                .overlay { if !lifted { dragSurface } }
-                .overlay(alignment: Alignment(horizontal: .trailing, vertical: .providerTitle)) { checkbox }
-                .padding(.horizontal, 12)
-        }
-    }
-
-    private var staleMessage: String? {
-        guard let snapshot = store.snapshots[account], snapshot.state == .stale else { return nil }
-        return snapshot.message ?? "Showing the last figures that arrived."
-    }
-
-    private var header: some View {
-        HStack(spacing: 5) {
-            Text(account.title)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(store.enabled(account) ? .primary : .secondary)
-                .alignmentGuide(.providerTitle) { $0[VerticalAlignment.center] }
-            if staleMessage != nil {
-                // Figures that stopped updating looked exactly like fresh ones, which is the
-                // same silence this app keeps finding in itself.
-                // The explanation is the drag surface's tooltip, since that surface lies over
-                // this icon.
-                Image(systemName: "clock.badge.exclamationmark")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-    }
-
-    /// Covers the title and the rows, so the card can be picked up anywhere but its controls.
-    private var dragSurface: some View {
-        CardDragSource(
-            account: account,
-            help: staleMessage,
-            onBegin: { y in drag.begin(account, atY: y, store: store) },
-            onMove: { y in drag.moved(toY: y, store: store, animation: animation) },
-            onEnd: { dropped in drag.finish(store: store, commit: dropped, animation: animation) }
-        )
-        .accessibilityHidden(true)
-    }
-
-    /// Laid over the card rather than inside the drag surface, so a click on it is always a
-    /// click. A checkbox, not a switch: five saturated blue pills were the loudest thing on
-    /// screen, and blue now means "what is left" on every bar. One hue, one meaning.
-    private var checkbox: some View {
-        Toggle("", isOn: Binding(get: { store.enabled(account) }, set: { store.setEnabled($0, for: account) }))
-            .labelsHidden().toggleStyle(.checkbox).controlSize(.small)
-            .alignmentGuide(.providerTitle) { $0[VerticalAlignment.center] }
-    }
-}
-
-private extension VerticalAlignment {
-    /// The middle of a card's title, which the checkbox laid over the card lines up with -
-    /// padding put it two points high, since the title and the checkbox differ in height.
-    enum ProviderTitle: AlignmentID {
-        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[VerticalAlignment.center] }
-    }
-    static let providerTitle = VerticalAlignment(ProviderTitle.self)
-}
-
-/// One usage window on one line: label, bar, figure, reset.
-///
-/// The bar is inline rather than on a row of its own, which halves the menu without hiding
-/// anything. Every bar starts at the same left edge and is the same width, so reading down
-/// the column shows which limit is tightest without reading a single number - the
-/// comparison a row of vertical columns would have given, except the labels survive.
-private struct UsageRow: View {
-    let bucket: UsageBucket
-    /// The one window worth acting on, if any. Weight rather than colour: blue and orange
-    /// are already carrying spent-versus-left, and a third meaning on the same hues would
-    /// undo that.
-    var isTightest = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(bucket.label)
-                .foregroundStyle(isTightest ? .primary : .secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: 128, alignment: .leading)
-
-            UsageBar(fraction: bucket.fractionUsed)
-
-            Text(UsageFormat.value(bucket))
-                .monospacedDigit()
-                .fontWeight(isTightest ? .semibold : .regular)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(width: 70, alignment: .trailing)
-
-            Text(UsageFormat.reset(bucket) ?? "—")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 32, alignment: .trailing)
-        }
-        .font(.callout)
-        .help(UsageFormat.detail(bucket))
-    }
-}
-
-/// Orange for what is spent, blue for what is left, filling from the left.
-///
-/// The pair is the validated categorical slots 1 and 2: CVD separation deltaE 26.8 (protan),
-/// normal-vision deltaE 31.8, both clearing 3:1 against this surface.
-private struct UsageBar: View {
-    let fraction: Double?
-
-    private let segmentGap: CGFloat = 2
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            if let fraction {
-                let used = min(max(fraction, 0), 1)
-                let needsGap = used > 0.001 && used < 0.999
-                let drawable = width - (needsGap ? segmentGap : 0)
-                HStack(spacing: 0) {
-                    Rectangle().fill(MeterPalette.used).frame(width: drawable * used)
-                    if needsGap { Color.clear.frame(width: segmentGap) }
-                    Rectangle().fill(MeterPalette.remaining).frame(width: drawable * (1 - used))
-                }
-            } else {
-                // Nothing to divide by, so a filled bar would be a lie.
-                Rectangle().fill(MeterPalette.remaining.opacity(0.18))
-            }
-        }
-        .frame(height: 7)
-        .clipShape(.rect(cornerRadius: 3.5))
-    }
-}
-
-private struct MeterLegend: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            swatch(MeterPalette.used, "used")
-            swatch(MeterPalette.remaining, "left")
-            Spacer()
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-
-    private func swatch(_ color: Color, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 8, height: 8)
-            Text(label)
-        }
-    }
-}
-
-enum MeterPalette {
-    /// Slots 1 and 2 of the validated categorical theme, each with its own step per
-    /// appearance rather than one colour dimmed for dark mode.
-    static let used = dynamic(light: NSColor(srgbRed: 0.92, green: 0.41, blue: 0.20, alpha: 1),
-                              dark: NSColor(srgbRed: 0.85, green: 0.35, blue: 0.15, alpha: 1))
-    static let remaining = dynamic(light: NSColor(srgbRed: 0.16, green: 0.47, blue: 0.84, alpha: 1),
-                                   dark: NSColor(srgbRed: 0.22, green: 0.53, blue: 0.90, alpha: 1))
-
-    private static func dynamic(light: NSColor, dark: NSColor) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-        })
-    }
-}
-

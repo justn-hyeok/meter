@@ -27,6 +27,7 @@ public struct UsageService: Sendable {
         case .deepSeek: DeepSeekUsageProvider(store: secrets, account: account)
         case .commandCode: CommandCodeUsageProvider(credential: CommandCodeAPIKeyCredential(store: secrets, account: account))
         case .openCodeGo: OpenCodeGoUsageProvider(credential: OpenCodeGoCredential(store: secrets, account: account))
+        case .openRouter: OpenRouterUsageProvider(store: secrets, account: account)
         }
     }
 

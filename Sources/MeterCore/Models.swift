@@ -7,13 +7,14 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     case deepSeek = "deepseek"
     case commandCode = "command-code"
     case openCodeGo = "opencode-go"
+    case openRouter = "openrouter"
 
     public var id: String { rawValue }
 
     /// Whether Meter is handed this provider's credential rather than finding it on the
     /// machine. Those are the only ones `meter set-key` applies to.
     public var acceptsStoredKey: Bool {
-        self == .deepSeek || self == .commandCode || self == .claude || self == .openCodeGo
+        self == .deepSeek || self == .commandCode || self == .claude || self == .openCodeGo || self == .openRouter
     }
 
     public var title: String {
@@ -24,6 +25,7 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         case .deepSeek: "DeepSeek API"
         case .commandCode: "Command Code GOAT"
         case .openCodeGo: "OpenCode Go"
+        case .openRouter: "OpenRouter"
         }
     }
 }
@@ -35,7 +37,7 @@ extension ProviderID {
     /// for: the rest belong to an app or CLI that is signed in to one account at a time, and
     /// Meter reads that login rather than keeping one of its own.
     public var acceptsNamedAccounts: Bool {
-        self == .deepSeek || self == .commandCode || self == .openCodeGo
+        self == .deepSeek || self == .commandCode || self == .openCodeGo || self == .openRouter
     }
 }
 

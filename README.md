@@ -2,7 +2,7 @@
 
 [한국어](README.ko.md)
 
-Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and quotas across Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, and OpenCode Go. It queries providers with your existing sign-ins or keys and keeps usage observations on your Mac. There is no Meter account or hosted Meter service.
+Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and quotas across Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, and OpenRouter. It queries providers with your existing sign-ins or keys and keeps usage observations on your Mac. There is no Meter account or hosted Meter service.
 
 [Install](#install) · [CLI](#cli) · [Contribute](CONTRIBUTING.md) · [MIT License](LICENSE)
 
@@ -14,7 +14,8 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - DeepSeek API balance
 - Command Code GOAT monthly credits and rolling limits
 - OpenCode Go 5-hour, weekly, and monthly limits
-- Up to three accounts each for DeepSeek, Command Code, and OpenCode Go, each on its own card
+- OpenRouter key spending limit, budgets, and spend this month
+- Up to three accounts each for DeepSeek, Command Code, OpenCode Go, and OpenRouter, each on its own card
 - Per-provider toggles that persist across launches
 - Launch at login
 - **⌃⌥M** opens and closes the menu from anywhere
@@ -33,6 +34,7 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - A DeepSeek API key, pasted into Meter or left in `DEEPSEEK_API_KEY`, for DeepSeek balance
 - A Command Code CLI login, or `COMMAND_CODE_API_KEY`, for Command Code usage
 - OpenCode Go connected in OpenCode, or a key given with `meter set-key opencode-go`, for OpenCode Go usage
+- An OpenRouter API key, pasted into Meter or left in `OPENROUTER_API_KEY`, for OpenRouter usage
 
 Every provider except Cursor is enabled by default. Cursor needs its desktop app installed, so it is the one you opt into, from the Meter menu or with `meter enable cursor`.
 
@@ -107,9 +109,15 @@ Connect OpenCode Go once in OpenCode (`/connect`, then OpenCode Go). OpenCode ke
 
 OpenCode has no documented usage API for Go. Meter calls `opencode.ai/zen/go/v1/usage`, the route the OpenCode console reads, with that key. It shows the 5-hour, weekly, and monthly windows as percentages.
 
+### OpenRouter
+
+Paste an OpenRouter API key into the OpenRouter card in the Meter menu, or pipe it in with `meter set-key openrouter`. The key is stored the same way as DeepSeek's, `OPENROUTER_API_KEY` wins when it is set, and `meter clear-key openrouter` removes a stored key.
+
+Meter calls OpenRouter's documented `GET /api/v1/key` endpoint, which any API key may call. It shows the key's own spending limit and what is left of it, the budget an organization admin set when that budget is the one that would block requests first, and the key's spend for the current UTC month. All of these are dollar amounts, so they do not move the menu bar gauge. The account's credit balance is not shown: OpenRouter's `/api/v1/credits` endpoint requires a management key, not the key you run models with.
+
 ### Multiple accounts
 
-DeepSeek, Command Code, and OpenCode Go can each hold up to three accounts: the default one described above, plus two named ones. Named accounts are added and removed from the command line only:
+DeepSeek, Command Code, OpenCode Go, and OpenRouter can each hold up to three accounts: the default one described above, plus two named ones. Named accounts are added and removed from the command line only:
 
 ```sh
 meter set-key deepseek --name work      # reads the key from stdin, like set-key
@@ -137,6 +145,7 @@ Report suspected vulnerabilities through the [private security channel](SECURITY
 - **Cursor unavailable:** Sign in to the Cursor app, then refresh Meter.
 - **Command Code unavailable:** Run `cmd login`, or give Meter a key with `meter set-key command-code`.
 - **OpenCode Go unavailable:** Connect OpenCode Go in OpenCode with `/connect`, or run `meter set-key opencode-go`.
+- **OpenRouter unavailable:** Run `meter set-key openrouter`. `OPENROUTER_API_KEY` works in the CLI but is invisible to the app when it is launched from Finder.
 - **A keychain prompt on every launch:** the build is ad-hoc signed, so each rebuild is a new identity. See [Signing](#signing).
 - **DeepSeek unavailable:** Run `meter set-key deepseek`. `DEEPSEEK_API_KEY` works for the CLI but an app launched from Finder never sees it, which `meter doctor` reports as `blocked`.
 - **No Dock icon:** This is expected; use the gauge icon in the menu bar.

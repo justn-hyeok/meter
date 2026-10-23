@@ -113,6 +113,7 @@ public enum CredentialDoctor {
             machine
         )
         case .openCodeGo: openCodeGo(machine)
+        case .openRouter: apiKeyBacked(.openRouter, OpenRouterUsageProvider.environmentKey, stored: true, cliFile: nil, machine)
         }
     }
 

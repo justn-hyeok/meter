@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 사용량과 한도를 한곳에서 확인하는 **MIT 라이선스 macOS 메뉴바 앱 및 CLI**입니다. 기존 로그인이나 사용자가 준 키로 제공자에게 직접 조회하고, 사용량 관측값은 이 Mac에 저장합니다. Meter 전용 계정이나 서버는 없습니다.
+Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, OpenRouter의 사용량과 한도를 한곳에서 확인하는 **MIT 라이선스 macOS 메뉴바 앱 및 CLI**입니다. 기존 로그인이나 사용자가 준 키로 제공자에게 직접 조회하고, 사용량 관측값은 이 Mac에 저장합니다. Meter 전용 계정이나 서버는 없습니다.
 
 [설치](#설치) · [CLI](#cli) · [기여](CONTRIBUTING.md) · [MIT 라이선스](LICENSE)
 
@@ -14,7 +14,8 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 
 - DeepSeek API 잔액 표시
 - Command Code GOAT 월간 크레딧과 롤링 한도 표시
 - OpenCode Go 5시간·주간·월간 한도 표시
-- DeepSeek, Command Code, OpenCode Go는 계정을 제공자마다 3개까지 추가하고 각각 별도 카드로 표시
+- OpenRouter 키 지출 한도, 예산, 이번 달 지출 표시
+- DeepSeek, Command Code, OpenCode Go, OpenRouter는 계정을 제공자마다 3개까지 추가하고 각각 별도 카드로 표시
 - 앱을 다시 실행해도 유지되는 제공자별 토글
 - 로그인 시 자동 실행
 - **⌃⌥M**으로 어디서든 메뉴 열고 닫기
@@ -33,6 +34,7 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go의 
 - DeepSeek 잔액 조회를 위한 DeepSeek API 키 (Meter에 붙여넣거나 `DEEPSEEK_API_KEY`에 설정)
 - Command Code 사용량 조회를 위한 Command Code CLI 로그인 또는 `COMMAND_CODE_API_KEY`
 - OpenCode Go 사용량 조회를 위한 OpenCode의 OpenCode Go 연결 또는 `meter set-key opencode-go`로 저장한 키
+- OpenRouter 사용량 조회를 위한 OpenRouter API 키 (Meter에 붙여넣거나 `OPENROUTER_API_KEY`에 설정)
 
 Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor는 데스크톱 앱 설치가 필요하므로 Meter 메뉴나 `meter enable cursor`로 직접 켭니다.
 
@@ -107,9 +109,15 @@ OpenCode에서 OpenCode Go를 한 번 연결합니다(`/connect` → OpenCode Go
 
 OpenCode는 Go 사용량 API를 공식 문서로 제공하지 않습니다. Meter는 OpenCode 콘솔이 읽는 `opencode.ai/zen/go/v1/usage` 경로를 그 키로 호출하고, 5시간·주간·월간 한도를 퍼센트로 표시합니다.
 
+### OpenRouter
+
+Meter 메뉴의 OpenRouter 카드에 OpenRouter API 키를 붙여넣거나, `meter set-key openrouter`로 파이프해 넣습니다. 키는 DeepSeek과 같은 방식으로 저장되고, `OPENROUTER_API_KEY`가 설정되어 있으면 그쪽이 우선하며, `meter clear-key openrouter`로 저장된 키를 지울 수 있습니다.
+
+Meter는 어떤 API 키로도 호출할 수 있는 OpenRouter 공식 `GET /api/v1/key` 엔드포인트를 사용합니다. 키 자체의 지출 한도와 남은 금액, 조직 관리자가 설정한 예산 중 요청을 가장 먼저 막는 예산, 그리고 현재 UTC 월의 키 지출을 표시합니다. 모두 달러 금액이므로 메뉴바 게이지에는 반영되지 않습니다. 계정 크레딧 잔액은 표시하지 않습니다. OpenRouter의 `/api/v1/credits` 엔드포인트는 모델 호출용 키가 아니라 관리(management) 키를 요구하기 때문입니다.
+
 ### 여러 계정
 
-DeepSeek, Command Code, OpenCode Go는 위에서 설명한 기본 계정 외에 이름을 붙인 계정 2개까지, 모두 3개의 계정을 쓸 수 있습니다. 이름 붙인 계정은 명령어로만 추가하고 지웁니다.
+DeepSeek, Command Code, OpenCode Go, OpenRouter는 위에서 설명한 기본 계정 외에 이름을 붙인 계정 2개까지, 모두 3개의 계정을 쓸 수 있습니다. 이름 붙인 계정은 명령어로만 추가하고 지웁니다.
 
 ```sh
 meter set-key deepseek --name work      # set-key처럼 키를 표준 입력으로 받습니다
@@ -137,6 +145,7 @@ Codex, Claude, Cursor는 이 Mac에서 앱이나 CLI로 로그인한 계정 하�
 - **Cursor를 사용할 수 없음:** Cursor 앱에 로그인한 뒤 Meter를 새로고침합니다.
 - **Command Code를 사용할 수 없음:** `cmd login`으로 로그인하거나 `meter set-key command-code`로 키를 지정합니다.
 - **OpenCode Go를 사용할 수 없음:** OpenCode에서 `/connect`로 OpenCode Go를 연결하거나 `meter set-key opencode-go`로 키를 지정합니다.
+- **OpenRouter를 사용할 수 없음:** `meter set-key openrouter`를 실행합니다. `OPENROUTER_API_KEY`는 CLI에서는 동작하지만 Finder에서 실행한 앱은 볼 수 없습니다.
 - **실행할 때마다 키체인 프롬프트가 뜸:** ad-hoc 서명 빌드라 리빌드마다 신원이 바뀌기 때문입니다. [서명](#서명)을 참고하세요.
 - **DeepSeek을 사용할 수 없음:** `meter set-key deepseek`을 실행합니다. `DEEPSEEK_API_KEY`는 CLI에서는 동작하지만 Finder에서 실행한 앱은 볼 수 없으며, `meter doctor`가 이를 `blocked`로 보고합니다.
 - **Dock 아이콘이 없음:** 정상 동작입니다. 메뉴바의 게이지 아이콘을 사용하세요.

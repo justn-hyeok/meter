@@ -79,6 +79,29 @@ private func temporaryStore() -> (SecretStore, URL, () -> Void) {
     #expect(blankEnvironment.apiKey() == "sk-stored")
 }
 
+@Test func openRouterPrefersTheEnvironmentAndFallsBackToTheStoredKey() throws {
+    let (store, _, cleanup) = temporaryStore()
+    defer { cleanup() }
+
+    #expect(OpenRouterUsageProvider(store: store, environment: [:]).apiKey() == nil)
+
+    try store.setSecret("sk-or-stored", for: .openRouter)
+    #expect(OpenRouterUsageProvider(store: store, environment: [:]).apiKey() == "sk-or-stored")
+
+    let withEnvironment = OpenRouterUsageProvider(store: store, environment: ["OPENROUTER_API_KEY": "sk-or-env"])
+    #expect(withEnvironment.apiKey() == "sk-or-env")
+
+    // An empty variable is not a key.
+    let blankEnvironment = OpenRouterUsageProvider(store: store, environment: ["OPENROUTER_API_KEY": ""])
+    #expect(blankEnvironment.apiKey() == "sk-or-stored")
+
+    // A named account has only its own stored key; the shell's variable is the default's.
+    let work = Account(.openRouter, name: "work")
+    try store.setSecret("sk-or-work", for: work)
+    let named = OpenRouterUsageProvider(store: store, environment: ["OPENROUTER_API_KEY": "sk-or-env"], account: work)
+    #expect(named.apiKey() == "sk-or-work")
+}
+
 private func temporaryAuthFile(_ contents: String?) -> (URL, () -> Void) {
     let directory = URL(fileURLWithPath: NSTemporaryDirectory())
         .appending(path: "MeterTests-\(UUID().uuidString)")

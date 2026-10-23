@@ -91,7 +91,7 @@ enum CLIArgumentError: LocalizedError, Equatable {
         case .providerTakesNoKey(let provider):
             "\(provider.title) does not use a stored key; Meter reads its credential from this machine"
         case .providerTakesNoNamedAccounts(let provider):
-            "\(provider.title) has one account, the one signed in on this Mac. Named accounts are for DeepSeek, Command Code and OpenCode Go"
+            "\(provider.title) has one account, the one signed in on this Mac. Named accounts are for DeepSeek, Command Code, OpenCode Go and OpenRouter"
         case .invalidAccountName(let name):
             "Invalid account name '\(name)': use up to 20 letters, digits, '-', '_' or '.', not starting with '-'"
         case .missingAccountName:
@@ -283,6 +283,7 @@ enum CLIArgumentParser {
         case "deepseek", "deep-seek": .deepSeek
         case "command-code", "commandcode", "goat": .commandCode
         case "opencode-go", "opencodego", "opencode": .openCodeGo
+        case "openrouter", "open-router": .openRouter
         default: nil
         }
     }

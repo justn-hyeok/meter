@@ -273,7 +273,7 @@ struct MeterCLIApplication {
       meter clear-key <provider> [--name <name>]
 
     Providers:
-      codex, claude, cursor, deepseek, command-code, opencode-go
+      codex, claude, cursor, deepseek, command-code, opencode-go, openrouter
 
     Selection:
       With no provider, status queries the providers enabled in Meter settings.
@@ -282,9 +282,10 @@ struct MeterCLIApplication {
       A provider name covers all of its accounts; 'deepseek#work' names one.
 
     Accounts:
-      DeepSeek, Command Code and OpenCode Go can hold up to three accounts: the default
-      one and two named ones. Add one with 'meter set-key deepseek --name work' and
-      remove it with 'meter clear-key deepseek --name work'.
+      DeepSeek, Command Code, OpenCode Go and OpenRouter can hold up to three accounts:
+      the default one and two named ones. Add one with
+      'meter set-key deepseek --name work' and remove it with
+      'meter clear-key deepseek --name work'.
 
     Commands:
       status       Read the app's saved usage (no network request)

@@ -21,36 +21,43 @@ final class CardDrag {
 
     /// Where the lifted card is drawn: under the pointer, held at the point it was grabbed.
     private(set) var liftedFrame: CGRect?
-    @ObservationIgnored private var grabOffset: CGFloat = 0
+    @ObservationIgnored private var grabOffset: CGSize = .zero
+    /// When the last move landed. Tiles of two widths reflow when one moves, which can slide
+    /// a different tile under a pointer that has not moved, and without a pause the two
+    /// would trade places back and forth for as long as it stayed there.
+    @ObservationIgnored private var lastMove: Date = .distantPast
 
-    func begin(_ account: Account, atY y: CGFloat, store: UsageStore) {
+    func begin(_ account: Account, at point: CGPoint, store: UsageStore) {
         guard let card = frames[account] else { return }
         self.account = account
         store.isReordering = true
         orderBefore = store.order
-        grabOffset = y - card.minY
+        grabOffset = CGSize(width: point.x - card.minX, height: point.y - card.minY)
         liftedFrame = card
+        lastMove = .distantPast
     }
 
-    /// Moves the carried card into another's place once the pointer is past that card's
-    /// middle, and to the furthest such card when a quick flick skipped some in between, so
-    /// overshooting the end of the list lands at the end. Past the middle, the move leaves
-    /// the pointer on the far half of the card it passed, so the same card cannot trigger
-    /// the reverse move while it animates.
-    func moved(toY y: CGFloat, store: UsageStore, animation: Animation?) {
-        let order = store.order
-        guard let carried = account, let from = order.firstIndex(of: carried) else { return }
-        if let lifted = liftedFrame { liftedFrame = lifted.offsetBy(dx: 0, dy: y - grabOffset - lifted.minY) }
-        var target: Account?
-        for other in order[(from + 1)...] where frames[other].map({ y > $0.midY }) == true {
-            target = other
+    /// Moves the carried tile into the place of the tile under the pointer. Past the last
+    /// tile it goes to the end and above the first to the start, so a quick flick that
+    /// overshoots the grid still lands where it was aimed.
+    func moved(to point: CGPoint, store: UsageStore, animation: Animation?) {
+        guard let carried = account else { return }
+        if let lifted = liftedFrame {
+            liftedFrame = CGRect(origin: CGPoint(x: point.x - grabOffset.width, y: point.y - grabOffset.height), size: lifted.size)
         }
-        if target == nil {
-            for other in order[..<from].reversed() where frames[other].map({ y < $0.midY }) == true {
-                target = other
-            }
+        guard Date.now.timeIntervalSince(lastMove) > 0.25 else { return }
+        let others = store.order.filter { $0 != carried && store.enabled($0) && frames[$0] != nil }
+        guard !others.isEmpty else { return }
+        var target = others.first { frames[$0]!.contains(point) }
+        if target == nil, let from = store.order.firstIndex(of: carried) {
+            // Only towards the end the pointer went past: a tile already last, held below the
+            // grid, would otherwise trade places with the one before it and back again.
+            func index(_ account: Account) -> Int { store.order.firstIndex(of: account) ?? from }
+            if let last = others.last, point.y > frames[last]!.maxY, index(last) > from { target = last }
+            else if let first = others.first, point.y < frames[first]!.minY, index(first) < from { target = first }
         }
         if let target {
+            lastMove = .now
             withAnimation(animation) { store.move(carried, to: target, persist: false) }
         }
     }
@@ -85,10 +92,10 @@ struct CardDragSource: NSViewRepresentable {
     let account: Account
     /// Shown on hover. The drag surface covers the card, so it carries the card's tooltip.
     let help: String?
-    /// The pointer's height in the menu's coordinates when the drag starts.
-    let onBegin: (_ y: CGFloat) -> Void
-    /// The pointer's height in the menu's coordinates, as the drag moves.
-    let onMove: (_ y: CGFloat) -> Void
+    /// The pointer in the menu's coordinates when the drag starts.
+    let onBegin: (_ point: CGPoint) -> Void
+    /// The pointer in the menu's coordinates, as the drag moves.
+    let onMove: (_ point: CGPoint) -> Void
     /// Whether the card was put down in the menu, as opposed to Esc or a release outside.
     let onEnd: (_ dropped: Bool) -> Void
 
@@ -105,8 +112,8 @@ struct CardDragSource: NSViewRepresentable {
 
 final class DragSourceView: NSView, NSDraggingSource {
     var account: Account?
-    var onBegin: (CGFloat) -> Void = { _ in }
-    var onMove: (CGFloat) -> Void = { _ in }
+    var onBegin: (CGPoint) -> Void = { _ in }
+    var onMove: (CGPoint) -> Void = { _ in }
     var onEnd: (Bool) -> Void = { _ in }
     private var mouseDown: NSEvent?
 
@@ -135,7 +142,7 @@ final class DragSourceView: NSView, NSDraggingSource {
         let point = convert(now, from: nil)
         dragItem.setDraggingFrame(NSRect(x: point.x, y: point.y, width: 1, height: 1), contents: NSImage(size: NSSize(width: 1, height: 1)))
 
-        onBegin(menuY(forWindowPoint: start) ?? 0)
+        onBegin(menuPoint(forWindowPoint: start) ?? .zero)
         let session = beginDraggingSession(with: [dragItem], event: event, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = false
         session.draggingFormation = .none
@@ -146,8 +153,8 @@ final class DragSourceView: NSView, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
-        guard let window, let y = menuY(forWindowPoint: window.convertPoint(fromScreen: screenPoint)) else { return }
-        onMove(y)
+        guard let window, let point = menuPoint(forWindowPoint: window.convertPoint(fromScreen: screenPoint)) else { return }
+        onMove(point)
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
@@ -158,9 +165,9 @@ final class DragSourceView: NSView, NSDraggingSource {
     }
 
     /// The menu's root view is where the card frames are measured from.
-    private func menuY(forWindowPoint point: NSPoint) -> CGFloat? {
+    private func menuPoint(forWindowPoint point: NSPoint) -> CGPoint? {
         guard let root = window?.contentView else { return nil }
-        return root.convert(point, from: nil).y
+        return root.convert(point, from: nil)
     }
 }
 
