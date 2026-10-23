@@ -46,7 +46,8 @@ import Testing
     let since = TokenLogFixtures.date("2026-10-20T12:01:00.000Z")
     let report = TokenLedger.fixture.read(since: since)
     #expect(report.records.allSatisfy { $0.timestamp >= since })
-    #expect(report.recentModels.map(\.model) == ["gpt-5.5", "claude-haiku-5-5", "o-legacy"])
+    // Claude Code and OpenCode answered in the same second: the tool order breaks the tie.
+    #expect(report.recentModels.map(\.model) == ["claude-haiku-5-5", "gpt-5.5", "o-legacy"])
 }
 
 @Test func tokenWindowsParseAndRejectNonsense() {

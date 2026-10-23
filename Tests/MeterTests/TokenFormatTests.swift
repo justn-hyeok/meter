@@ -11,3 +11,10 @@ import Testing
     #expect(TokenFormat.compact(4_560_000) == "4.56M")
     #expect(TokenFormat.compact(2_000_000_000) == "2B")
 }
+
+@Test func fixedWidthTokenCountsKeepTheirDecimals() {
+    #expect(TokenFormat.compact(1_000, fixedWidth: true) == "1.00k")
+    #expect(TokenFormat.compact(7_906_000_000, fixedWidth: true) == "7.91B")
+    #expect(TokenFormat.compact(1_500) == "1.5k")
+    #expect(TokenFormat.compact(1_050) == "1.05k")
+}

@@ -282,6 +282,8 @@ struct MeterCLIApplication {
       meter disable <provider> ...
       meter set-key <provider> [--name <name>]
       meter clear-key <provider> [--name <name>]
+      meter tokens [--since 7d] [--by provider-model] [--json]
+      meter models [--since 7d] [--json]
 
     Providers:
       codex, claude, cursor, deepseek, command-code, opencode-go, openrouter
@@ -307,6 +309,8 @@ struct MeterCLIApplication {
       set-key      Read a provider's API key from stdin and store it for both the app
                    and this CLI. Only providers Meter cannot find a credential for.
       clear-key    Remove a stored key
+      tokens       Sum the token usage each coding tool logged on this Mac
+      models       The model each coding tool used last, and the others it used since
 
     Options:
       --json       Print a stable JSON envelope
@@ -316,6 +320,10 @@ struct MeterCLIApplication {
       --show-reset   Include reset countdown with --short
       --refresh    Query providers now and update the shared cache
       --max-age     Mark older data stale and exit 1 (30s, 10m, 2h or 1d; max 7d)
+      --since      How far back the coding tools' logs count: 30m, 24h, 7d or all
+                   (default 7d)
+      --by         Group tokens by model, provider, tool or provider-model
+                   (default provider-model)
       -h, --help   Show help
       -V, --version
 
@@ -323,7 +331,8 @@ struct MeterCLIApplication {
       0  Query succeeded, or at least one provider succeeded without --strict
       1  Stale or unavailable data with --strict or --max-age, or doctor --strict
          found an enabled provider with no credential
-      2  Every selected provider was unavailable, or the cache could not be saved
+      2  Every selected provider was unavailable, or the cache could not be saved,
+         or every coding tool's logs could not be read
       64 Invalid command or arguments
     """
 }

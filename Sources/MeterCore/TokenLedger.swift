@@ -194,7 +194,9 @@ public struct TokenLedgerReport: Sendable {
         }
         return latest.values
             .map { RecentModel(tool: $0.tool, provider: $0.provider, model: $0.model, lastUsed: $0.timestamp) }
-            .sorted { $0.lastUsed > $1.lastUsed }
+            // Two tools can answer in the same second; the tool order settles it, so the list
+            // does not reshuffle between two reads of the same logs.
+            .sorted { ($0.lastUsed, $1.tool) > ($1.lastUsed, $0.tool) }
     }
 
     public var total: TokenCounts { records.reduce(.zero) { $0 + $1.tokens } }
@@ -241,10 +243,9 @@ public struct TokenLedger: Sendable {
 }
 
 extension TokenLedger {
-    /// The ledger over this Mac's real logs. Each tool's source registers itself here once
-    /// it exists.
+    /// The ledger over this Mac's real logs.
     public static var `default`: TokenLedger {
-        TokenLedger(sources: [])
+        TokenLedger(sources: [ClaudeCodeLogSource.default, CodexLogSource.default, OpenCodeLogSource.default])
     }
 }
 
