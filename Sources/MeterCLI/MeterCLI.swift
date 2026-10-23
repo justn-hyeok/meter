@@ -284,6 +284,7 @@ struct MeterCLIApplication {
       meter clear-key <provider> [--name <name>]
       meter tokens [--since 7d] [--by provider-model] [--json]
       meter models [--since 7d] [--json]
+      meter mcp
 
     Providers:
       codex, claude, cursor, deepseek, command-code, opencode-go, openrouter
@@ -311,6 +312,7 @@ struct MeterCLIApplication {
       clear-key    Remove a stored key
       tokens       Sum the token usage each coding tool logged on this Mac
       models       The model each coding tool used last, and the others it used since
+      mcp          Serve quotas and token usage to AI agents over MCP (stdio)
 
     Options:
       --json       Print a stable JSON envelope

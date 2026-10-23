@@ -19,11 +19,13 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, Op
 - 앱을 다시 실행해도 유지되는 제공자별 토글
 - 로그인 시 자동 실행
 - **⌃⌥M**으로 어디서든 메뉴 열고 닫기
-- 제공자 카드를 드래그해서 순서 변경, 터미널 `meter` 출력도 같은 순서
+- 제공자 타일을 드래그해서 순서 변경, 터미널 `meter` 출력도 같은 순서
 - 5분마다 자동 갱신 및 메뉴에서 수동 갱신
 - 일시적인 갱신 실패 시 마지막 정상 데이터 보존
 - 활성화된 제공자 중 가장 높은 사용률에 따라 변하는 메뉴바 게이지
 - 대화형 사용과 자동화를 위한 독립 실행형 `meter` 명령
+- Claude Code, Codex, OpenCode가 이 Mac에 남기는 로그를 읽어 모델·제공자별 토큰 사용량 표시 (메뉴의 **Tokens** 화면, `meter tokens` / `meter models`)
+- AI 에이전트가 남은 한도와 사용 내역을 물어볼 수 있는 MCP 서버 `meter mcp`
 
 ## 요구 사항
 
@@ -195,6 +197,31 @@ swift run meter disable deepseek
 제공자를 생략하면 공유 설정에서 활성화된 제공자를 조회합니다. `meter all`은 비활성 제공자까지 모두 조회하며 `meter codex`는 `meter status codex`의 단축형입니다. `providers` 명령은 현재 활성화 상태를 표시합니다.
 
 `--short`는 계정마다 사용률이 가장 높은 창 하나를 `Claude 35% · Codex 27%`처럼 한 줄로 표시합니다. `--all-windows`를 더하면 모든 창을, `--show-reset`을 더하면 초기화까지 남은 시간을 표시합니다. `--max-age 10m`는 10분이 지난 관측값을 오래된 값으로 표시하고 종료 코드 1을 반환합니다(`s`, `m`, `h`, `d`; 최대 7일). `meter watch`는 터미널에서 캐시를 5초마다 다시 그립니다. `meter watch --refresh`는 시작할 때 한 번만 직접 조회합니다. `meter cache status`는 계정별 마지막 관측과 조회 시각 및 실패 이유를 보여 줍니다. 기존 캐시 파일도 읽으며, 새로 저장할 때 시도 정보를 추가합니다. 캐시 파일에는 사용량 관측값만 저장하며 자격 증명은 저장하지 않습니다.
+
+### 토큰과 모델
+
+`meter tokens`는 각 코딩 도구가 이 Mac에 남긴 로그에서 토큰 사용량을 합산합니다. 대상은 Claude Code(`~/.claude/projects` 또는 `CLAUDE_CONFIG_DIR`), Codex(`~/.codex/sessions` 또는 `CODEX_HOME`), OpenCode(`~/.local/share/opencode/opencode.db` 또는 `XDG_DATA_HOME`)입니다. 어디로도 전송하지 않고 키도 필요 없습니다. `--since`는 `30m`, `24h`, `7d`, `all`을 받고(기본 `7d`), `--by`는 `model`, `provider`, `tool`, `provider-model`로 묶습니다(기본값은 `provider-model`이라 같은 모델을 다른 곳에서 쓰면 따로 표시됩니다). `meter models`는 도구별로 마지막에 쓴 모델과 기간 안에 쓴 다른 모델을 보여줍니다. 둘 다 `--json`을 지원합니다.
+
+```sh
+meter tokens --since 24h --by provider
+meter models
+```
+
+입력은 새로 들어간 입력만 셉니다. 캐시 읽기·쓰기는 별도 열이고, 출력에는 추론 토큰이 포함됩니다. 비용은 도구가 직접 기록한 경우(OpenCode)에만 표시하며 Meter가 가격을 추정하지 않습니다. Codex의 압축된 `archived_sessions`는 읽지 않습니다.
+
+### MCP 서버
+
+`meter mcp`는 stdio로 동작하는 Model Context Protocol 서버이며 도구 세 가지를 제공합니다.
+
+- `get_quotas`: 계정별 플랜 한도와 남은 양. Meter.app의 마지막 갱신 결과를 읽기만 하므로 제공자에 요청하지 않고 키체인 창도 띄우지 않습니다.
+- `get_token_usage`: 기간별로 모델·제공자·도구 단위 토큰 사용량.
+- `get_current_models`: 각 코딩 도구가 마지막에 쓴 모델.
+
+MCP 클라이언트에 등록하면 됩니다. Claude Code 예시:
+
+```sh
+claude mcp add meter -- meter mcp
+```
 
 상태줄에 넣을 때는 설치된 `meter`가 `PATH`에 있어야 합니다. 아래는 각 도구의 기존 설정에 추가할 예시입니다. 기존 상태줄이 있다면 그 명령에 `meter --short`를 붙여 사용하세요.
 

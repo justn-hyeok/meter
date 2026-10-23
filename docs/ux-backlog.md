@@ -6,11 +6,14 @@ remove an entry when it ships.
 ## Not yet seen in the running app
 
 - Light mode. Every tile screenshot so far is dark.
-- The stale, waiting, error and key-field tiles. They are built but have not been seen.
+- The stale, waiting and error tiles. They are built but have not been seen.
 - A provider with more than three windows (the "+N more" line).
 - Named accounts in the tile grid.
 
 ## Known gaps
+
+- The key-field tile says "paste one in the Meter menu" directly above the field it means.
+  Inside the menu it should just say "Paste an OpenRouter API key".
 
 - The menu bar icon is still the SF Symbol gauge, not the red arc the tile design called
   for. MenuBarExtra only paints a system image reliably, so a drawn arc needs its own try.

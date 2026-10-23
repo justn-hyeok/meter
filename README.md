@@ -19,11 +19,13 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - Per-provider toggles that persist across launches
 - Launch at login
 - **⌃⌥M** opens and closes the menu from anywhere
-- Drag provider cards to reorder them; the `meter` CLI prints in the same order
+- Drag provider tiles to reorder them; the `meter` CLI prints in the same order
 - Automatic refresh every five minutes and manual refresh from the menu
 - Last-good data preserved when a refresh temporarily fails
 - Dynamic menu bar gauge based on the highest known usage percentage across enabled providers
 - A standalone `meter` command for interactive use and automation
+- Token usage per model and provider, read from the logs Claude Code, Codex and OpenCode keep on this Mac, in the menu's **Tokens** view and with `meter tokens` / `meter models`
+- An MCP server, `meter mcp`, so AI agents can ask how much of a plan is left and what spent it
 
 ## Requirements
 
@@ -195,6 +197,31 @@ swift run meter disable deepseek
 With no provider argument, `meter` queries the providers enabled in the shared settings. `meter all` also queries disabled providers, while `meter codex` is shorthand for `meter status codex`. The `providers` command lists the current enabled state.
 
 `--short` prints each account's fullest window on one line, for example `Claude 35% · Codex 27%`. Add `--all-windows` to show every window or `--show-reset` to include the reset countdown. `--max-age 10m` marks observations older than ten minutes stale and exits 1 (`s`, `m`, `h`, or `d`; at most seven days). `meter watch` redraws cached values every five seconds in a terminal; `meter watch --refresh` queries once at startup. `meter cache status` shows the last observation and attempt for each account, including a failure reason. Older cache files remain readable and gain attempt metadata on the next write. The cache stores usage observations, never credentials.
+
+### Tokens and models
+
+`meter tokens` sums the tokens each coding tool logged on this Mac: Claude Code (`~/.claude/projects`, or `CLAUDE_CONFIG_DIR`), Codex (`~/.codex/sessions`, or `CODEX_HOME`) and OpenCode (`~/.local/share/opencode/opencode.db`, or `XDG_DATA_HOME`). Nothing is sent anywhere and no key is needed. `--since` takes `30m`, `24h`, `7d` or `all` (default `7d`); `--by` groups by `model`, `provider`, `tool` or `provider-model` (the default, so the same model bought from two places stays two rows). `meter models` names the model each tool used last and the others it used in the window. Both accept `--json`.
+
+```sh
+meter tokens --since 24h --by provider
+meter models
+```
+
+Input counts fresh input only; cache reads and writes are their own columns, and output includes reasoning. Costs appear only where the tool recorded one (OpenCode); Meter does not estimate prices. Codex's compressed `archived_sessions` are not read.
+
+### MCP server
+
+`meter mcp` is a Model Context Protocol server on stdio, with three tools:
+
+- `get_quotas`: plan limits and what is left per account, from Meter.app's last refresh. It never queries a provider, so it can never raise a keychain prompt.
+- `get_token_usage`: tokens by model, provider or tool over a window.
+- `get_current_models`: the model each coding tool used last.
+
+Register it with any MCP client, for example Claude Code:
+
+```sh
+claude mcp add meter -- meter mcp
+```
 
 The installed `meter` must be on `PATH` for status line integrations. Add these examples to your existing configuration; if a status line already exists, append `meter --short` to its command.
 
