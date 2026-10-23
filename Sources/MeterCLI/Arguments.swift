@@ -32,6 +32,12 @@ enum CLICommand: Equatable {
     case disable([AccountTarget])
     case setKey(Account)
     case clearKey(Account)
+    /// Tokens the coding tools logged on this Mac, summed over `window` (`7d`, `24h`, `all`).
+    case tokens(window: String, grouping: TokenGrouping)
+    /// The model each coding tool used last, within `window`.
+    case models(window: String)
+    /// A Model Context Protocol server on stdin and stdout. Runs until stdin closes.
+    case mcp
     case help
     case version
 }
@@ -75,6 +81,10 @@ enum CLIArgumentError: LocalizedError, Equatable {
     case invalidMaximumAge(String)
     case nameOnlyForKeys
     case conflictingAccountName(Account, String)
+    case missingTokenWindow
+    case invalidTokenWindow(String)
+    case invalidGrouping(String)
+    case tokenOnlyOption
 
     var errorDescription: String? {
         switch self {
@@ -104,6 +114,14 @@ enum CLIArgumentError: LocalizedError, Equatable {
             "--name is only valid for set-key and clear-key"
         case .conflictingAccountName(let account, let name):
             "\(account.rawValue) already names an account; drop --name \(name), or write \(account.provider.rawValue) --name \(name)"
+        case .missingTokenWindow:
+            "--since needs a duration such as 30m, 24h or 7d, or 'all'"
+        case .invalidTokenWindow(let value):
+            "Invalid --since '\(value)': use a positive duration in m, h or d, or 'all'"
+        case .invalidGrouping(let value):
+            "Invalid --by '\(value)': use \(TokenGrouping.allCases.map(\.rawValue).joined(separator: ", "))"
+        case .tokenOnlyOption:
+            "--since is valid for tokens and models; --by only for tokens"
         case .statusOnlyOption:
             "These options are valid for status; watch accepts all except --json, and doctor accepts --json and --strict"
         }
@@ -120,6 +138,8 @@ enum CLIArgumentParser {
         var showReset = false
         var maximumAge: TimeInterval?
         var name: String?
+        var tokenWindow: String?
+        var grouping: TokenGrouping?
         var positional: [String] = []
 
         var index = 0
@@ -134,6 +154,32 @@ enum CLIArgumentParser {
             }
             if argument.hasPrefix("--name=") {
                 name = String(argument.dropFirst("--name=".count))
+                continue
+            }
+            if argument == "--since" || argument.hasPrefix("--since=") {
+                let value: String
+                if argument == "--since" {
+                    guard index < arguments.count else { throw CLIArgumentError.missingTokenWindow }
+                    value = arguments[index]
+                    index += 1
+                } else {
+                    value = String(argument.dropFirst("--since=".count))
+                }
+                guard TokenWindow.since(value) != nil else { throw CLIArgumentError.invalidTokenWindow(value) }
+                tokenWindow = value.lowercased()
+                continue
+            }
+            if argument == "--by" || argument.hasPrefix("--by=") {
+                let value: String
+                if argument == "--by" {
+                    guard index < arguments.count else { throw CLIArgumentError.invalidGrouping("") }
+                    value = arguments[index]
+                    index += 1
+                } else {
+                    value = String(argument.dropFirst("--by=".count))
+                }
+                guard let parsed = TokenGrouping(rawValue: value.lowercased()) else { throw CLIArgumentError.invalidGrouping(value) }
+                grouping = parsed
                 continue
             }
             if argument == "--max-age" {
@@ -163,6 +209,7 @@ enum CLIArgumentParser {
 
         guard let first = positional.first else {
             if name != nil { throw CLIArgumentError.nameOnlyForKeys }
+            if tokenWindow != nil || grouping != nil { throw CLIArgumentError.tokenOnlyOption }
             guard !(json && short), (!allWindows && !showReset) || short else { throw CLIArgumentError.unknownOption("--short/--json or --all-windows/--show-reset without --short") }
             return .init(command: .status(.enabled), json: json, strict: strict, short: short, allWindows: allWindows, refresh: refresh, showReset: showReset, maximumAge: maximumAge)
         }
@@ -198,6 +245,16 @@ enum CLIArgumentParser {
                 }
             }
             command = first == "set-key" ? .setKey(account) : .clearKey(account)
+        case "tokens":
+            guard rest.isEmpty else { throw CLIArgumentError.unexpectedArguments(first) }
+            command = .tokens(window: tokenWindow ?? "7d", grouping: grouping ?? .providerModel)
+        case "models":
+            guard rest.isEmpty else { throw CLIArgumentError.unexpectedArguments(first) }
+            guard grouping == nil else { throw CLIArgumentError.tokenOnlyOption }
+            command = .models(window: tokenWindow ?? "7d")
+        case "mcp":
+            guard rest.isEmpty else { throw CLIArgumentError.unexpectedArguments(first) }
+            command = .mcp
         case "doctor":
             guard rest.isEmpty else { throw CLIArgumentError.unexpectedArguments(first) }
             command = .doctor
@@ -214,6 +271,14 @@ enum CLIArgumentParser {
             command = .status(try parseSelection(positional))
         }
 
+        switch command {
+        case .tokens, .models:
+            // Only --json and the token options apply to the logs.
+            guard !strict, !short, !allWindows, !refresh, !showReset, maximumAge == nil else { throw CLIArgumentError.tokenOnlyOption }
+            return .init(command: command, json: json, strict: false)
+        default:
+            if tokenWindow != nil || grouping != nil { throw CLIArgumentError.tokenOnlyOption }
+        }
         if json || strict || short || allWindows || refresh || showReset || maximumAge != nil {
             switch command {
             case .status: break

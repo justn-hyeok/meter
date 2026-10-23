@@ -16,7 +16,7 @@ let package = Package(
         .testTarget(
             name: "MeterTests",
             dependencies: ["MeterCore", "MeterCLI"],
-            resources: [.process("Fixtures")]
+            resources: [.process("Fixtures"), .copy("TokenLogs")]
         ),
     ]
 )

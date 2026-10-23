@@ -18,6 +18,8 @@ struct MeterCLIApplication {
     let settings: MeterSettings
     let secrets: SecretStore
     let cache: UsageCache
+    /// The coding tools' local logs, for `tokens`, `models` and the MCP server.
+    let ledger: TokenLedger
 
     /// Without a service, one is made reading from `secrets`, so the accounts listed and the
     /// keys used to query them come from the same file.
@@ -25,12 +27,14 @@ struct MeterCLIApplication {
         service: UsageService? = nil,
         settings: MeterSettings = MeterSettings(),
         secrets: SecretStore = .default,
-        cache: UsageCache = .default
+        cache: UsageCache = .default,
+        ledger: TokenLedger = .default
     ) {
         self.service = service ?? UsageService(secrets: secrets)
         self.settings = settings
         self.secrets = secrets
         self.cache = cache
+        self.ledger = ledger
         settings.migrateIfNeeded()
     }
 
@@ -61,6 +65,13 @@ struct MeterCLIApplication {
             return await status(selection, options: options)
         case .watch(let selection):
             return await status(selection, options: options)
+        case .tokens(let window, let grouping):
+            return TokensCommand.tokens(ledger: ledger, window: window, grouping: grouping, json: options.json)
+        case .models(let window):
+            return TokensCommand.models(ledger: ledger, window: window, json: options.json)
+        case .mcp:
+            // Served from `main`, which owns stdin; there is no single result to return.
+            return .init(standardOutput: "", standardError: "meter mcp must be run as its own process", exitCode: 64)
         }
     }
 
@@ -323,6 +334,9 @@ struct MeterCLI {
         let result: CLIResult
         do {
             let options = try CLIArgumentParser.parse(Array(CommandLine.arguments.dropFirst()))
+            if case .mcp = options.command {
+                exit(await MCPServer(app: MeterCLIApplication()).serve())
+            }
             if case .watch = options.command {
                 guard isatty(STDOUT_FILENO) == 1 else {
                     write("watch requires a terminal", to: .standardError)
