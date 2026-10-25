@@ -494,7 +494,9 @@ enum AuthenticatedRequest {
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         switch http.statusCode {
         case 200..<300: return data
-        case 401, 403:
+        // A redirect left unfollowed is one to another host: an API sending its caller to
+        // a sign-in page, which is what Cursor answers an expired session with.
+        case 300..<400, 401, 403:
             credential.invalidate()
             throw CredentialError.signInRequired(signInAt)
         default: throw ProviderHTTPError.unexpectedStatus(http.statusCode)
@@ -520,7 +522,7 @@ struct CursorUsageProvider: UsageProvider {
                 origin: "https://cursor.com",
                 referer: "https://cursor.com/dashboard/spending",
                 credential: credential,
-                signInAt: "cursor.com"
+                signInAt: CursorSessionCredential.signInHint
             )
             return try CursorUsageParser.parse(data)
         } catch {
