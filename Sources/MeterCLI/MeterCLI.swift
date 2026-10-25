@@ -261,7 +261,8 @@ struct MeterCLIApplication {
 
         do {
             let output = options.short
-                ? CLITextFormatter.short(snapshots, allWindows: options.allWindows, showReset: options.showReset)
+                ? CLITextFormatter.short(snapshots, allWindows: options.allWindows, showReset: options.showReset,
+                                         muted: settings.mutedWindows)
                 : options.json
                 ? try CLIJSONFormatter.status(snapshots)
                 : CLITextFormatter.status(snapshots, style: .detect(), muted: settings.mutedWindows)

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import MeterCore
+@testable import MeterCLI
 
 private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
@@ -123,4 +124,13 @@ private func snapshot(_ provider: ProviderID, _ used: Double, resetAt: Date? = n
     #expect(MeterSettings(defaults: defaults).mutedWindows == [key])
     #expect(BucketKey(rawValue: key.rawValue) == key)
     #expect(BucketKey(rawValue: "deepseek#work|balance") == BucketKey(account: Account(.deepSeek, name: "work"), bucketID: "balance"))
+}
+
+@Test func shortLeadsWithAWindowStillWarnedAbout() {
+    let cursor = UsageSnapshot(provider: .cursor, buckets: [
+        .init(id: "cursor-models", label: "Cursor Models", used: 5, limit: 100, remaining: 95, resetAt: nil, unit: .percent),
+        .init(id: "other-models", label: "Other Models", used: 100, limit: 100, remaining: 0, resetAt: nil, unit: .percent),
+    ], fetchedAt: now, source: "test", state: .live, message: nil)
+    #expect(CLITextFormatter.short([cursor]) == "Cursor 100%")
+    #expect(CLITextFormatter.short([cursor], muted: [BucketKey(provider: .cursor, bucketID: "other-models")]) == "Cursor 5%")
 }

@@ -2,8 +2,9 @@ import Foundation
 import MeterCore
 
 enum CLITextFormatter {
+    /// One window per account: the fullest still warned about, as the menu's tile leads with.
     static func short(_ snapshots: [UsageSnapshot], allWindows: Bool = false,
-                      showReset: Bool = false, now: Date = .now) -> String {
+                      showReset: Bool = false, now: Date = .now, muted: Set<BucketKey> = []) -> String {
         snapshots.flatMap { snapshot -> [String] in
             let name: String
             switch snapshot.provider {
@@ -17,7 +18,9 @@ enum CLITextFormatter {
             if allWindows {
                 buckets = snapshot.buckets
             } else {
-                buckets = snapshot.buckets.max { ($0.percentageUsed ?? -1) < ($1.percentageUsed ?? -1) }.map { [$0] } ?? []
+                let warned = snapshot.buckets.filter { !muted.contains(BucketKey(account: snapshot.accountID, bucketID: $0.id)) }
+                let candidates = warned.isEmpty ? snapshot.buckets : warned
+                buckets = candidates.max { ($0.percentageUsed ?? -1) < ($1.percentageUsed ?? -1) }.map { [$0] } ?? []
             }
             guard !buckets.isEmpty else { return ["\(accountName) —"] }
             return buckets.map { bucket in
