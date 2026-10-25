@@ -182,9 +182,10 @@ public struct CodexLogSource: TokenLogSource {
             case "turn_context":
                 context.model = entry.payload?.model ?? context.model
             case "token_usage_record":
-                unmatchedRecords += 1
+                // A record that cannot be read leaves its count event to stand in for it.
                 guard let payload = entry.payload, let usage = payload.usage,
                       let timestamp = timestamps.date(entry.timestamp) else { continue }
+                unmatchedRecords += 1
                 found.append(record(
                     id: payload.responseID ?? "\(context.id(fallback: file)):\(entry.timestamp)",
                     timestamp: timestamp, context: context, usage: usage

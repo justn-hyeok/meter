@@ -286,12 +286,17 @@ private struct IssueRow: View {
     private var title: String {
         switch issue {
         case .signInRequired: "Sign in again"
-        case .expiresSoon(let date): "Sign-in ends \(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))"
+        // Short enough to sit beside two buttons in half the menu's width; the tooltip
+        // says the rest.
+        case .expiresSoon(let date): "Ends \(date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))"
         }
     }
 
     private var detail: String {
         var lines = [provider.signInFix?.instruction ?? snapshot.message ?? ""]
+        if case .expiresSoon(let date) = issue {
+            lines.insert("Sign-in ends \(date.formatted(date: .abbreviated, time: .shortened))", at: 0)
+        }
         if snapshot.state == .stale {
             lines.append("Showing figures from \(snapshot.fetchedAt.formatted(.relative(presentation: .named)))")
         }
@@ -380,7 +385,9 @@ private struct ProviderTile: View {
             VStack(alignment: .leading, spacing: 10) {
                 header
                 if let snapshot, !snapshot.buckets.isEmpty {
-                    TileContent(buckets: snapshot.buckets)
+                    // A live tile with an issue row below has one row less to spare.
+                    TileContent(buckets: snapshot.buckets,
+                                maxRows: snapshot.issue != nil && snapshot.state == .live ? MeterStyle.maxRows - 1 : MeterStyle.maxRows)
                         .opacity(snapshot.state == .stale || isIdle(snapshot) ? 0.55 : 1)
                     if snapshot.state == .stale, snapshot.issue == nil { staleNote(snapshot) }
                 } else {
@@ -459,6 +466,7 @@ private struct ProviderTile: View {
 /// The arcs and the headline figure, then every window on a line of its own.
 private struct TileContent: View {
     let buckets: [UsageBucket]
+    var maxRows = MeterStyle.maxRows
 
     /// The windows the arcs draw: the fullest first, outermost, so the arc that matters is
     /// the longest one.
@@ -471,9 +479,9 @@ private struct TileContent: View {
     /// The windows that get a line of their own: all of them when they fit, otherwise the
     /// fullest first, keeping one line for the count of the rest.
     private var listed: [UsageBucket] {
-        guard buckets.count > MeterStyle.maxRows else { return buckets }
+        guard buckets.count > maxRows else { return buckets }
         let kept = Set(buckets.sorted { ($0.fractionUsed ?? -1) > ($1.fractionUsed ?? -1) }
-            .prefix(MeterStyle.maxRows - 1).map(\.id))
+            .prefix(maxRows - 1).map(\.id))
         return buckets.filter { kept.contains($0.id) }
     }
 
