@@ -4,6 +4,8 @@ import Testing
 @testable import MeterCLI
 
 private let now = Date(timeIntervalSince1970: 1_800_000_000)
+/// The two steps 0.6.3 used, so the older cases still say what they used to.
+private let classic = [0.8, 0.95]
 
 private func snapshot(_ provider: ProviderID, _ used: Double, resetAt: Date? = now.addingTimeInterval(7_200),
                       state: SnapshotState = .live, issue: SnapshotIssue? = nil) -> UsageSnapshot {
@@ -13,35 +15,66 @@ private func snapshot(_ provider: ProviderID, _ used: Double, resetAt: Date? = n
                   fetchedAt: now, source: "test", state: state, message: nil, issue: issue)
 }
 
+private func evaluate(_ snapshots: [UsageSnapshot], sent: Set<String>, thresholds: [Double] = classic) -> (alerts: [UsageAlert], sent: Set<String>) {
+    UsageAlerts.evaluate(snapshots, sent: sent, thresholds: thresholds, now: now)
+}
+
 @Test func aLimitAlertsOncePerLevelAndPeriod() {
     var sent: Set<String> = []
-    var result = UsageAlerts.evaluate([snapshot(.claude, 50)], sent: sent, now: now)
+    var result = evaluate([snapshot(.claude, 50)], sent: sent)
     #expect(result.alerts.isEmpty)
 
-    result = UsageAlerts.evaluate([snapshot(.claude, 82)], sent: result.sent, now: now)
-    #expect(result.alerts.map(\.title) == ["Claude: Weekly running low"])
+    result = evaluate([snapshot(.claude, 82)], sent: result.sent)
+    #expect(result.alerts.map(\.title) == ["Claude: Weekly 80%"])
     sent = result.sent
 
     // The same level on the next refresh is not news.
-    result = UsageAlerts.evaluate([snapshot(.claude, 84)], sent: sent, now: now)
+    result = evaluate([snapshot(.claude, 84)], sent: sent)
     #expect(result.alerts.isEmpty)
 
-    result = UsageAlerts.evaluate([snapshot(.claude, 96)], sent: result.sent, now: now)
-    #expect(result.alerts.map(\.title) == ["Claude: Weekly almost used up"])
+    result = evaluate([snapshot(.claude, 96)], sent: result.sent)
+    #expect(result.alerts.map(\.title) == ["Claude: Weekly 95%"])
 
     // Dropping back to 90% does not repeat the 80% alert.
-    result = UsageAlerts.evaluate([snapshot(.claude, 90)], sent: result.sent, now: now)
+    result = evaluate([snapshot(.claude, 90)], sent: result.sent)
     #expect(result.alerts.isEmpty)
+}
 
-    // A new period is news again.
-    result = UsageAlerts.evaluate([snapshot(.claude, 85, resetAt: now.addingTimeInterval(7 * 86_400))], sent: result.sent, now: now)
+@Test func aRollingResetDoesNotAlertAgain() {
+    var result = evaluate([snapshot(.claude, 85)], sent: [])
+    #expect(result.alerts.count == 1)
+    // Claude's five-hour window moves its reset every refresh. That is the same window.
+    result = evaluate([snapshot(.claude, 85, resetAt: now.addingTimeInterval(7 * 86_400))], sent: result.sent)
+    #expect(result.alerts.isEmpty)
+    // After usage falls, the next climb is news.
+    result = evaluate([snapshot(.claude, 50)], sent: result.sent)
+    result = evaluate([snapshot(.claude, 85)], sent: result.sent)
     #expect(result.alerts.count == 1)
 }
 
 @Test func aWindowFoundPastBothLevelsAlertsOnce() {
-    let result = UsageAlerts.evaluate([snapshot(.codex, 97)], sent: [], now: now)
+    let result = evaluate([snapshot(.codex, 97)], sent: [])
     #expect(result.alerts.count == 1)
+    #expect(result.alerts.first?.title == "Codex: Weekly 95%")
     #expect(result.alerts.first?.body.hasPrefix("97% used") == true)
+}
+
+@Test func customPercentsAlertOnlyThoseSteps() {
+    let onlyHundred = [1.0]
+    #expect(evaluate([snapshot(.claude, 99)], sent: [], thresholds: onlyHundred).alerts.isEmpty)
+    #expect(evaluate([snapshot(.claude, 100)], sent: [], thresholds: onlyHundred).alerts.map(\.title)
+            == ["Claude: Weekly 100%"])
+
+    let early = UsageAlerts.evaluate([snapshot(.claude, 26)], sent: [], now: now)
+    #expect(early.alerts.map(\.title) == ["Claude: Weekly 25%"])
+}
+
+@Test func alertPercentsParseACommaListAndRejectJunk() {
+    #expect(AlertPercents.parse("25, 50, 75, 80, 85, 90, 95, 97, 99, 100") == AlertPercents.defaultValues)
+    #expect(AlertPercents.parse("100, 25, 25%") == [25, 100])
+    #expect(AlertPercents.parse("25, foo, 50") == nil)
+    #expect(AlertPercents.parse("") == nil)
+    #expect(AlertPercents.parse("0, 101") == nil)
 }
 
 @Test func staleFiguresNeitherAlertNorForget() {

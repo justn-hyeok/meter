@@ -24,7 +24,7 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - Automatic refresh every five minutes and manual refresh from the menu
 - Last-good data preserved when a refresh temporarily fails
 - A monochrome menu bar gauge drawn like the tiles' arcs, filled to the highest usage
-- macOS notifications when a window passes 80% and 95%, and when a sign-in stops working or is about to end; tiles show the fix (copy the sign-in command, open the page)
+- macOS notifications when a window passes a percent you set (default 25, 50, 75, 80, 85, 90, 95, 97, 99, 100), once at each step, and when a sign-in stops working or is about to end; tiles show the fix (copy the sign-in command, open the page)
 - A standalone `meter` command for interactive use and automation
 - Token usage per model and provider, read from the logs Claude Code, Codex and OpenCode keep on this Mac, in the menu's **Tokens** view and with `meter tokens` / `meter models`
 - Hive's credit balance, read from the portal session of a browser signed in to portal.thehive.ai (Chrome, Arc, Dia, Brave, Edge or Aside) and kept alive by Meter's own refreshes. Off until added with **+ Hive**; the first read asks once for the browser's "Safe Storage" keychain item

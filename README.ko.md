@@ -24,7 +24,7 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, Op
 - 5분마다 자동 갱신 및 메뉴에서 수동 갱신
 - 일시적인 갱신 실패 시 마지막 정상 데이터 보존
 - 타일과 같은 호 모양의 단색 메뉴바 게이지. 가장 높은 사용률만큼 채워짐
-- 한도가 80%·95%를 넘을 때, 로그인이 끊기거나 곧 만료될 때 macOS 알림. 타일에서 바로 해결 가능(로그인 명령 복사, 페이지 열기)
+- 한도가 설정한 퍼센트(기본 25, 50, 75, 80, 85, 90, 95, 97, 99, 100)를 넘을 때 단계마다 한 번, 로그인이 끊기거나 곧 만료될 때 macOS 알림. 타일에서 바로 해결 가능(로그인 명령 복사, 페이지 열기)
 - 대화형 사용과 자동화를 위한 독립 실행형 `meter` 명령
 - Claude Code, Codex, OpenCode가 이 Mac에 남기는 로그를 읽어 모델·제공자별 토큰 사용량 표시 (메뉴의 **Tokens** 화면, `meter tokens` / `meter models`)
 - Hive 크레딧 잔액. portal.thehive.ai에 로그인된 브라우저(Chrome, Arc, Dia, Brave, Edge, Aside)의 세션을 가져오고, Meter가 갱신할 때마다 세션이 연장됨. 기본은 꺼져 있어 **+ Hive**로 추가하며, 처음 한 번 브라우저의 "Safe Storage" 키체인 접근을 허용해야 함

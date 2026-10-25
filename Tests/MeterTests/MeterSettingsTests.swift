@@ -121,3 +121,19 @@ import Testing
     settings.migrateIfNeeded()
     #expect(settings.enabled(.openRouter))
 }
+
+@Test func alertPercentsDefaultAndIgnoreJunk() throws {
+    let suiteName = "MeterTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let settings = MeterSettings(defaults: defaults)
+    #expect(settings.alertPercentsText == AlertPercents.defaultText)
+    #expect(settings.alertThresholds == UsageAlerts.defaultThresholds)
+
+    settings.alertPercentsText = "100, 80"
+    #expect(MeterSettings(defaults: defaults).alertPercentsText == "80, 100")
+
+    settings.alertPercentsText = "nope"
+    #expect(MeterSettings(defaults: defaults).alertPercentsText == "80, 100")
+}

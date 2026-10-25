@@ -142,6 +142,7 @@ public struct MeterSettings {
 
     private static let alertsEnabledKey = "alerts.enabled"
     private static let alertsSentKey = "alerts.sent"
+    private static let alertPercentsKey = "alerts.percents"
 
     /// On unless switched off: an alert is only ever sent for a limit nearly reached or a
     /// sign-in that stopped working.
@@ -154,6 +155,21 @@ public struct MeterSettings {
     public var alertsSent: Set<String> {
         get { Set(defaults.stringArray(forKey: Self.alertsSentKey) ?? []) }
         nonmutating set { defaults.set(newValue.sorted(), forKey: Self.alertsSentKey) }
+    }
+
+    /// Comma-separated percents, normalised when a readable list is saved. Junk is ignored
+    /// so a half-typed field cannot wipe the last good list.
+    public var alertPercentsText: String {
+        get { defaults.string(forKey: Self.alertPercentsKey) ?? AlertPercents.defaultText }
+        nonmutating set {
+            if let values = AlertPercents.parse(newValue) {
+                defaults.set(AlertPercents.display(values), forKey: Self.alertPercentsKey)
+            }
+        }
+    }
+
+    public var alertThresholds: [Double] {
+        AlertPercents.thresholds(from: alertPercentsText)
     }
 
     private static let migrationKey = "settings.migration"

@@ -13,6 +13,7 @@ struct GeneralSettingsTab: View {
     @State private var monitor: Any?
     @State private var isRecording = false
     @State private var hint: String?
+    @State private var percentsDraft = ""
 
     var body: some View {
         Form {
@@ -30,7 +31,16 @@ struct GeneralSettingsTab: View {
                 }
                 if AppBundle.isBundled {
                     Toggle("Alerts", isOn: $alerts.isEnabled)
-                        .help("Notify when a limit passes 80% and 95%, or a sign-in stops working")
+                        .help("Notify at the percents below, once each, or when a sign-in stops working")
+                    if alerts.isEnabled {
+                        LabeledContent("Percents") {
+                            TextField(AlertPercents.defaultText, text: $percentsDraft)
+                                .onSubmit { commitPercents() }
+                        }
+                        Text("Notify once at each percent. Comma-separated.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 if let loginItemFailure {
                     Text(loginItemFailure).foregroundStyle(.red)
@@ -66,9 +76,18 @@ struct GeneralSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { percentsDraft = alerts.percentsText }
         // A monitor outlives the row it was started from: leaving the tab while recording
         // would otherwise keep swallowing every key press.
-        .onDisappear { stopRecording() }
+        .onDisappear {
+            commitPercents()
+            stopRecording()
+        }
+    }
+
+    private func commitPercents() {
+        alerts.percentsText = percentsDraft
+        percentsDraft = alerts.percentsText
     }
 
     /// "1 minute", "2 minutes": the bare second counts the settings store holds say nothing

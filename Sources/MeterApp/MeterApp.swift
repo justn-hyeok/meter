@@ -211,7 +211,7 @@ private struct MenuFooter: View {
                 if AppBundle.isBundled {
                     Toggle("Alerts", isOn: $alerts.isEnabled)
                         .toggleStyle(.checkbox)
-                        .help("Notify when a limit passes 80% and 95%, or a sign-in stops working")
+                        .help("Notify at the percents set in Settings, once each, or when a sign-in stops working")
                 }
                 Spacer()
                 SettingsButton(store: store, alerts: alerts, hotKeys: hotKeys)
