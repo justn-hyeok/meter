@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, OpenRouter의 사용량과 한도를 한곳에서 확인하는 **MIT 라이선스 macOS 메뉴바 앱 및 CLI**입니다. 기존 로그인이나 사용자가 준 키로 제공자에게 직접 조회하고, 사용량 관측값은 이 Mac에 저장합니다. Meter 전용 계정이나 서버는 없습니다.
+Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, OpenCode Zen, GitHub Copilot, OpenRouter, 직접 추가한 OpenAI 호환 API의 사용량과 한도를 한곳에서 확인하는 **MIT 라이선스 macOS 메뉴바 앱 및 CLI**입니다. 기존 로그인이나 사용자가 준 키로 제공자에게 직접 조회하고, 사용량 관측값은 이 Mac에 저장합니다. Meter 전용 계정이나 서버는 없습니다.
 
 [설치](#설치) · [CLI](#cli) · [기여](CONTRIBUTING.md) · [MIT 라이선스](LICENSE)
 
@@ -15,8 +15,12 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, Op
 - Command Code GOAT 월간 크레딧과 롤링 한도 표시
 - OpenCode Go 5시간·주간·월간 한도 표시
 - OpenRouter 키 지출 한도, 예산, 이번 달 지출 표시
-- DeepSeek, Command Code, OpenCode Go, OpenRouter는 계정을 제공자마다 3개까지 추가하고 각각 별도 카드로 표시
+- OpenCode Zen, GitHub Copilot 사용량
+- 직접 추가하는 OpenAI 호환 제공자
+- DeepSeek, Command Code, OpenCode Go, OpenCode Zen, OpenRouter는 계정을 제공자마다 3개까지 추가하고 각각 별도 카드로 표시
 - 앱을 다시 실행해도 유지되는 제공자별 토글
+- 타일 우클릭으로 크기 변경 (2×2, 2×1, 1×2). 격자가 섞인 크기를 맞추고, 설정에서 메뉴 너비·높이를 정함
+- 제안 칩을 숨겨 다시 안 나오게 할 수 있음
 - 로그인 시 자동 실행
 - **⌃⌥M**으로 어디서든 메뉴 열고 닫기
 - 제공자 타일을 드래그해서 순서 변경, 터미널 `meter` 출력도 같은 순서
@@ -40,8 +44,11 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, Op
 - Command Code 사용량 조회를 위한 Command Code CLI 로그인 또는 `COMMAND_CODE_API_KEY`
 - OpenCode Go 사용량 조회를 위한 OpenCode의 OpenCode Go 연결 또는 `meter set-key opencode-go`로 저장한 키
 - OpenRouter 사용량 조회를 위한 OpenRouter API 키 (Meter에 붙여넣거나 `OPENROUTER_API_KEY`에 설정)
+- OpenCode Zen 사용량 조회를 위한 Zen 키 (Meter에 붙여넣거나 `OPENCODE_API_KEY`에 설정)
+- GitHub Copilot 사용량 조회를 위한 Copilot CLI 로그인 또는 `GITHUB_TOKEN`
+- 직접 추가하는 OpenAI 호환 제공자의 베이스 URL과 API 키 (설정에서 입력)
 
-Cursor를 제외한 모든 제공자가 기본으로 켜져 있습니다. Cursor는 데스크톱 앱 설치가 필요하므로 Meter 메뉴나 `meter enable cursor`로 직접 켭니다.
+Cursor, Hive, OpenCode Zen, GitHub Copilot, 커스텀 제공자는 기본이 꺼져 있습니다. 타일 아래 칩이나 `meter enable`로 켭니다.
 
 각 자격 증명의 출처와 존재 여부는 `meter doctor`로 확인할 수 있습니다. 어떤 제공자도 브라우저가 설치되거나 실행되어 있을 필요는 없습니다.
 

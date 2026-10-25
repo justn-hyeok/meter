@@ -120,7 +120,7 @@ struct MeterCLIApplication {
     private func setKey(for account: Account) -> CLIResult {
         if account.name != nil, secrets.secret(for: account) == nil {
             let named = secrets.namedAccounts().filter { $0.provider == account.provider }
-            guard named.count < Account.limitPerProvider - 1 else {
+            guard named.count + (account.provider.hasDefaultAccount ? 1 : 0) < account.provider.accountLimit else {
                 return .init(
                     standardOutput: "",
                     standardError: "\(account.provider.title) already has \(Account.limitPerProvider) accounts, the default and \(named.map { "'\($0.name ?? "")'" }.joined(separator: " and ")). Remove one with 'meter clear-key \(account.provider.rawValue) --name <name>'.",
@@ -289,7 +289,8 @@ struct MeterCLIApplication {
       meter mcp
 
     Providers:
-      codex, claude, cursor, deepseek, command-code, opencode-go, openrouter, hive
+      codex, claude, cursor, deepseek, command-code, opencode-go, openrouter, hive,
+      opencode-zen, github-copilot, custom#<name>
 
     Selection:
       With no provider, status queries the providers enabled in Meter settings.

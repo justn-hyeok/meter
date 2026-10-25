@@ -2,7 +2,7 @@
 
 [한국어](README.ko.md)
 
-Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and quotas across Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, and OpenRouter. It queries providers with your existing sign-ins or keys and keeps usage observations on your Mac. There is no Meter account or hosted Meter service.
+Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and quotas across Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, OpenCode Zen, GitHub Copilot, OpenRouter, and custom OpenAI-compatible APIs. It queries providers with your existing sign-ins or keys and keeps usage observations on your Mac. There is no Meter account or hosted Meter service.
 
 [Install](#install) · [CLI](#cli) · [Contribute](CONTRIBUTING.md) · [MIT License](LICENSE)
 
@@ -15,8 +15,12 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - Command Code GOAT monthly credits and rolling limits
 - OpenCode Go 5-hour, weekly, and monthly limits
 - OpenRouter key spending limit, budgets, and spend this month
-- Up to three accounts each for DeepSeek, Command Code, OpenCode Go, and OpenRouter, each on its own card
+- OpenCode Zen and GitHub Copilot usage
+- Custom OpenAI-compatible providers you add yourself
+- Up to three accounts each for DeepSeek, Command Code, OpenCode Go, OpenCode Zen, and OpenRouter, each on its own card
 - Per-provider toggles that persist across launches
+- Right-click a tile to change its size (2×2, 2×1, 1×2); the grid packs around mixed sizes, and Settings sets the menu's width and height
+- Hide a suggestion chip so it does not come back
 - Launch at login
 - **⌃⌥M** opens and closes the menu from anywhere
 - Drag provider tiles to reorder them; the `meter` CLI prints in the same order
@@ -40,8 +44,11 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - A Command Code CLI login, or `COMMAND_CODE_API_KEY`, for Command Code usage
 - OpenCode Go connected in OpenCode, or a key given with `meter set-key opencode-go`, for OpenCode Go usage
 - An OpenRouter API key, pasted into Meter or left in `OPENROUTER_API_KEY`, for OpenRouter usage
+- An OpenCode Zen key, pasted into Meter or left in `OPENCODE_API_KEY`, for Zen usage
+- A GitHub Copilot CLI login, or `GITHUB_TOKEN`, for Copilot usage
+- A base URL and API key in Settings for each custom OpenAI-compatible provider
 
-Every provider except Cursor is enabled by default. Cursor needs its desktop app installed, so it is the one you opt into, from the Meter menu or with `meter enable cursor`.
+Cursor, Hive, OpenCode Zen, GitHub Copilot, and custom providers start off. Add them from the chips under the tiles, or with `meter enable`.
 
 Run `meter doctor` to see where each credential comes from and whether it is present. No browser needs to be installed or running for any provider.
 

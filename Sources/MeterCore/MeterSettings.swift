@@ -68,7 +68,7 @@ public struct MeterSettings {
     /// The default accounts alone. Internal: code that picked this up would leave named
     /// accounts out without noticing.
     var providerOrder: [ProviderID] {
-        get { order(of: ProviderID.allCases.map { Account($0) }).map(\.provider) }
+        get { order(of: ProviderID.allCases.filter(\.hasDefaultAccount).map { Account($0) }).map(\.provider) }
         nonmutating set { saveOrder(newValue.map { Account($0) }) }
     }
 
@@ -91,7 +91,7 @@ public struct MeterSettings {
     /// needs a browser signed in to its portal: most people have neither, and a tile that can
     /// only say "not connected" would be noise. Both are one click away under the tiles.
     public static func defaultEnabled(_ provider: ProviderID) -> Bool {
-        provider != .cursor && provider != .hive
+        ![.cursor, .hive, .openCodeZen, .githubCopilot, .custom].contains(provider)
     }
 
     // MARK: - Refresh and shortcut
@@ -124,6 +124,64 @@ public struct MeterSettings {
             } else {
                 defaults.removeObject(forKey: Self.hotKeyKey)
             }
+        }
+    }
+
+    // MARK: - Layout
+
+    private static let tileSizesKey = "tiles.sizes"
+    private static let fillGapsKey = "tiles.fillGaps"
+    private static let menuWidthKey = "menu.width"
+    private static let menuHeightKey = "menu.height"
+    private static let hiddenSuggestionsKey = "menu.hiddenSuggestions"
+    private static let customProvidersKey = "custom.providers"
+
+    /// Each account's tile size; an account not listed is 2×2.
+    public var tileSizes: [Account: TileSize] {
+        get {
+            let stored = defaults.dictionary(forKey: Self.tileSizesKey) as? [String: String] ?? [:]
+            return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in
+                guard let account = Account(rawValue: key), let size = TileSize(rawValue: value) else { return nil }
+                return (account, size)
+            })
+        }
+        nonmutating set {
+            defaults.set(Dictionary(uniqueKeysWithValues: newValue.filter { $0.value != .full }.map { ($0.key.rawValue, $0.value.rawValue) }),
+                         forKey: Self.tileSizesKey)
+        }
+    }
+
+    /// Whether a later tile may move up into a hole a bigger one left. On unless switched off.
+    public var fillGaps: Bool {
+        get { defaults.object(forKey: Self.fillGapsKey) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Self.fillGapsKey) }
+    }
+
+    public var menuWidth: MenuWidth {
+        get { defaults.string(forKey: Self.menuWidthKey).flatMap(MenuWidth.init(rawValue:)) ?? .standard }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Self.menuWidthKey) }
+    }
+
+    public var menuHeight: MenuHeight {
+        get { defaults.string(forKey: Self.menuHeightKey).flatMap(MenuHeight.init(rawValue:)) ?? .standard }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Self.menuHeightKey) }
+    }
+
+    /// Switched-off accounts whose "+" chip the user put away; they come back from Settings.
+    public var hiddenSuggestions: Set<Account> {
+        get { Set((defaults.stringArray(forKey: Self.hiddenSuggestionsKey) ?? []).compactMap(Account.init(rawValue:))) }
+        nonmutating set { defaults.set(newValue.map(\.rawValue).sorted(), forKey: Self.hiddenSuggestionsKey) }
+    }
+
+    /// Custom OpenAI-compatible providers, by account name. Their keys live in the key file
+    /// under `custom#<name>`, like any named account.
+    public var customProviders: [String: CustomProviderConfig] {
+        get {
+            guard let data = defaults.data(forKey: Self.customProvidersKey) else { return [:] }
+            return (try? JSONDecoder().decode([String: CustomProviderConfig].self, from: data)) ?? [:]
+        }
+        nonmutating set {
+            if let data = try? JSONEncoder().encode(newValue) { defaults.set(data, forKey: Self.customProvidersKey) }
         }
     }
 
@@ -272,8 +330,8 @@ public struct MeterSettings {
     }
 
     /// The providers added since migration 1, with the migration version that added them.
-    private static let addedInVersion: [(id: ProviderID, version: Int)] = [(.openRouter, 2), (.hive, 3)]
-    private static let migrationVersion = 3
+    private static let addedInVersion: [(id: ProviderID, version: Int)] = [(.openRouter, 2), (.hive, 3), (.openCodeZen, 4), (.githubCopilot, 4)]
+    private static let migrationVersion = 4
 
     private func key(for provider: ProviderID) -> String {
         key(for: Account(provider))
@@ -304,4 +362,14 @@ public struct HotKeySetting: Codable, Equatable, Sendable {
 
     /// ⌃⌥M: kVK_ANSI_M with controlKey | optionKey.
     public static let standard = HotKeySetting(keyCode: 0x2E, modifiers: 0x1000 | 0x0800, display: "⌃⌥M")
+}
+
+/// A custom OpenAI-compatible provider: where it lives. Its key is a named account's key.
+public struct CustomProviderConfig: Codable, Equatable, Sendable {
+    /// The API's base URL, such as `https://api.moonshot.ai/v1`.
+    public var baseURL: String
+
+    public init(baseURL: String) {
+        self.baseURL = baseURL
+    }
 }

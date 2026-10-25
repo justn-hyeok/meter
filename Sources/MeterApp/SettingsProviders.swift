@@ -9,7 +9,9 @@ struct ProvidersSettingsTab: View {
 
     var body: some View {
         Form {
-            ForEach(ProviderID.allCases) { provider in
+            // `custom` has no default account and no stored-key field of its own; it has the
+            // section below instead.
+            ForEach(ProviderID.allCases.filter { $0 != .custom }) { provider in
                 Section {
                     ProviderHeader(provider: provider, status: store.credentialStatus[provider])
                     Toggle("Show in menu", isOn: Binding(
@@ -30,6 +32,9 @@ struct ProvidersSettingsTab: View {
                     }
                 }
             }
+            CustomProvidersSection(store: store)
+            AddCustomProviderSection(store: store)
+            NotSuggestedSection(store: store)
         }
         .formStyle(.grouped)
     }
@@ -223,6 +228,165 @@ private struct NamedAccountControls: View {
             failure = nil
         } catch {
             failure = error.localizedDescription
+        }
+    }
+}
+
+/// Custom OpenAI-compatible providers that were added, each switched on by itself.
+private struct CustomProvidersSection: View {
+    @Bindable var store: UsageStore
+    @State private var failure: String?
+    @State private var removal: Account?
+
+    private var accounts: [Account] {
+        store.accounts.filter { $0.provider == .custom }
+    }
+
+    private var isRemoving: Binding<Bool> {
+        Binding(get: { removal != nil }, set: { if !$0 { removal = nil } })
+    }
+
+    var body: some View {
+        Section("Custom providers") {
+            if accounts.isEmpty {
+                Text("No custom providers yet. Add an OpenAI-compatible API below.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(accounts) { account in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.title)
+                                .lineLimit(1)
+                            if let saved = store.customProviders[account.name ?? ""]?.baseURL {
+                                Text(saved)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        Button("Remove", role: .destructive) { removal = account }
+                    }
+                    Toggle("Show in menu", isOn: Binding(
+                        get: { store.enabled(account) },
+                        set: { store.setEnabled($0, for: account) }
+                    ))
+                }
+            }
+            if let failure {
+                Text(failure)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .confirmationDialog("Remove custom provider?", isPresented: isRemoving, titleVisibility: .visible,
+                            presenting: removal) { account in
+            Button("Remove \(account.title)", role: .destructive) { remove(account) }
+            Button("Cancel", role: .cancel) {}
+        } message: { account in
+            Text("The key and base URL for \(account.title) are deleted from this Mac.")
+        }
+    }
+
+    private func remove(_ account: Account) {
+        do {
+            try store.removeAccount(account)
+            failure = nil
+        } catch {
+            failure = error.localizedDescription
+        }
+    }
+}
+
+/// The form that adds one. What such an API reports is not knowable, so the hint under the
+/// address says which of the two things its tile will show.
+private struct AddCustomProviderSection: View {
+    @Bindable var store: UsageStore
+    @State private var name = ""
+    @State private var baseURL = ""
+    @State private var key = ""
+    @State private var failure: String?
+
+    private var address: String {
+        baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var kind: CustomProviderKind? {
+        address.isEmpty ? nil : CustomProviderKind.detect(baseURL: address)
+    }
+
+    private var canAdd: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !address.isEmpty
+            && !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        Section("Add a custom provider") {
+            TextField("Name", text: $name)
+            TextField("Base URL", text: $baseURL)
+            if let kind {
+                Text(kind.hint)
+                    .font(.caption)
+                    .foregroundStyle(kind == .generic
+                        ? AnyShapeStyle(.secondary)
+                        : AnyShapeStyle(Color(nsColor: .systemGreen)))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            SecureField("API key", text: $key)
+            HStack {
+                Spacer(minLength: 0)
+                Button("Add") { add() }
+                    .disabled(!canAdd)
+            }
+            if let failure {
+                Text(failure)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func add() {
+        do {
+            try store.addCustomProvider(name: name, baseURL: baseURL, key: key)
+            name = ""
+            baseURL = ""
+            key = ""
+            failure = nil
+        } catch {
+            // Keep what was typed: the save is what failed, not the address.
+            failure = error.localizedDescription
+        }
+    }
+}
+
+/// Switched-off chips the user put away, to bring back. Empty means there is no section:
+/// a heading with nothing under it would read as a missing feature. (W4)
+private struct NotSuggestedSection: View {
+    @Bindable var store: UsageStore
+
+    private var accounts: [Account] {
+        store.hiddenSuggestions
+            .filter { store.accounts.contains($0) && !store.enabled($0) }
+            .sorted { $0.title < $1.title }
+    }
+
+    var body: some View {
+        if !accounts.isEmpty {
+            Section("Not suggested in the menu") {
+                ForEach(accounts) { account in
+                    HStack(spacing: 8) {
+                        Text(account.title)
+                        Spacer(minLength: 0)
+                        Button("Suggest again") { store.setSuggestionHidden(false, for: account) }
+                    }
+                }
+            }
         }
     }
 }

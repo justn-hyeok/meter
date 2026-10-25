@@ -121,6 +121,13 @@ public enum CredentialDoctor {
         case .openCodeGo: openCodeGo(machine)
         case .openRouter: apiKeyBacked(.openRouter, OpenRouterUsageProvider.environmentKey, stored: true, cliFile: nil, machine)
         case .hive: hive(machine)
+        case .openCodeZen: openCodeZen(machine)
+        case .githubCopilot: gitHubCopilot(machine)
+        // A custom provider has no default account: every one is a named account, and
+        // `diagnose(_:)` checks those by their stored key.
+        case .custom:
+            .init(provider: .custom, source: "named account key", availability: .missing,
+                  detail: "custom providers are added in Settings › Providers and checked by name")
         }
     }
 
@@ -216,6 +223,42 @@ public enum CredentialDoctor {
                      detail: status.availability == .missing
                         ? "connect OpenCode Go in OpenCode (/connect), or run 'meter set-key opencode-go'"
                         : status.detail)
+    }
+
+    /// Zen's key lives in the same auth file as Go's, under a different entry. File
+    /// existence is all this can check without opening the file, which `meter doctor`
+    /// deliberately does not do.
+    private static func openCodeZen(_ machine: DiagnosticEnvironment) -> CredentialStatus {
+        let source = "API key (env, stored, or OpenCode)"
+        let status = apiKeyBacked(.openCodeZen, OpenCodeZenCredential.environmentKey, stored: true, cliFile: OpenCodeZenCredential.cliAuthFile, machine)
+        return .init(
+            provider: .openCodeZen,
+            source: source,
+            availability: status.availability,
+            detail: status.availability == .missing
+                ? "connect OpenCode Zen in OpenCode (/connect), or run 'meter set-key opencode-zen'"
+                : status.detail
+        )
+    }
+
+    /// Copilot's token belongs to `gh`, so this reports whether the CLI is there, not what
+    /// `gh auth token` would print: running it would read the secret `meter doctor` promises
+    /// not to touch. A token in the environment is shell-only, as with every other key.
+    private static func gitHubCopilot(_ machine: DiagnosticEnvironment) -> CredentialStatus {
+        let source = "gh auth"
+        if let path = GitHubCopilotCredential.ghPaths.first(where: { machine.fileExists(URL(fileURLWithPath: $0)) }) {
+            return .init(provider: .githubCopilot, source: source, availability: .ready,
+                         detail: "gh found at \(path); its token is read on first use")
+        }
+        let shellKey = GitHubCopilotCredential.environmentKeys.first { !(machine.environment[$0] ?? "").isEmpty }
+        return .init(
+            provider: .githubCopilot,
+            source: source,
+            availability: .missing,
+            detail: shellKey.map {
+                "\($0) is set in this shell only; the app will not see it - install the GitHub CLI and run gh auth login"
+            } ?? "install the GitHub CLI and run gh auth login"
+        )
     }
 
     private static func apiKeyBacked(

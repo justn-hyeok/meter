@@ -82,6 +82,15 @@ public final class UsageStore {
     public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
     /// Windows the user said not to warn about: no colour, no alert, not in the gauge.
     public private(set) var muted: Set<BucketKey>
+    /// Each account's tile size; one not listed is 2×2.
+    public private(set) var tileSizes: [Account: TileSize]
+    /// Switched-off accounts whose "+" chip is put away.
+    public private(set) var hiddenSuggestions: Set<Account>
+    /// Custom OpenAI-compatible providers, by account name.
+    public private(set) var customProviders: [String: CustomProviderConfig]
+    public var fillGaps: Bool { didSet { settings.fillGaps = fillGaps } }
+    public var menuWidth: MenuWidth { didSet { settings.menuWidth = menuWidth } }
+    public var menuHeight: MenuHeight { didSet { settings.menuHeight = menuHeight } }
     /// Saved in settings; changing it restarts the background loop so the new interval
     /// applies now rather than after the current wait.
     public var refreshInterval: TimeInterval {
@@ -144,6 +153,12 @@ public final class UsageStore {
         self.order = settings.order(of: accounts)
         self.muted = settings.mutedWindows
         self.refreshInterval = settings.refreshInterval
+        self.tileSizes = settings.tileSizes
+        self.hiddenSuggestions = settings.hiddenSuggestions
+        self.customProviders = settings.customProviders
+        self.fillGaps = settings.fillGaps
+        self.menuWidth = settings.menuWidth
+        self.menuHeight = settings.menuHeight
         self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
     }
 
@@ -259,6 +274,12 @@ public final class UsageStore {
         if keys != storedKeyProviders { storedKeyProviders = keys }
         let mutedNow = settings.mutedWindows
         if mutedNow != muted { muted = mutedNow }
+        let sizesNow = settings.tileSizes
+        if sizesNow != tileSizes { tileSizes = sizesNow }
+        let hiddenNow = settings.hiddenSuggestions
+        if hiddenNow != hiddenSuggestions { hiddenSuggestions = hiddenNow }
+        let customNow = settings.customProviders
+        if customNow != customProviders { customProviders = customNow }
         let status = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
         if status != credentialStatus { credentialStatus = status }
         // A new or removed account changes which cards exist, so it is taken up even when
@@ -343,7 +364,8 @@ public final class UsageStore {
         // added one since, and checking a stale list overwrote its key without a word.
         let named = secrets.namedAccounts().filter { $0.provider == provider }
         guard !named.contains(account) else { throw AccountError.exists(account) }
-        guard named.count < Account.limitPerProvider - 1 else { throw AccountError.full(provider) }
+        let defaults = provider.hasDefaultAccount ? 1 : 0
+        guard named.count + defaults < provider.accountLimit else { throw AccountError.full(provider) }
         try secrets.setSecret(key, for: account)
         try? cache?.invalidate(account)
         settings.forget(account)
@@ -357,6 +379,10 @@ public final class UsageStore {
         try secrets.setSecret(nil, for: account)
         settings.forget(account)
         try? cache?.invalidate(account)
+        if account.provider == .custom, let name = account.name {
+            customProviders[name] = nil
+            settings.customProviders = customProviders
+        }
         snapshots[account] = nil
         snapshotFetchStartedAt[account] = nil
         reloadSettings(includingOrder: true)
@@ -443,6 +469,32 @@ public final class UsageStore {
 
     public func isMuted(_ key: BucketKey) -> Bool { muted.contains(key) }
 
+    public func tileSize(_ account: Account) -> TileSize { tileSizes[account] ?? .full }
+
+    public func setTileSize(_ size: TileSize, for account: Account) {
+        tileSizes[account] = size == .full ? nil : size
+        settings.tileSizes = tileSizes
+    }
+
+    /// Puts a switched-off account's "+" chip away, or brings it back.
+    public func setSuggestionHidden(_ hidden: Bool, for account: Account) {
+        if hidden { hiddenSuggestions.insert(account) } else { hiddenSuggestions.remove(account) }
+        settings.hiddenSuggestions = hiddenSuggestions
+    }
+
+    /// Adds a custom OpenAI-compatible provider: a named `custom` account with its key, plus
+    /// where its API lives.
+    public func addCustomProvider(name: String, baseURL: String, key: String) throws {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: baseURL), url.scheme == "https" || url.scheme == "http", url.host != nil else {
+            throw AccountError.invalidBaseURL(baseURL)
+        }
+        try addAccount(.custom, name: name, key: key)
+        customProviders[name] = CustomProviderConfig(baseURL: baseURL)
+        settings.customProviders = customProviders
+    }
+
     public func setMuted(_ isMuted: Bool, _ key: BucketKey) {
         if isMuted { muted.insert(key) } else { muted.remove(key) }
         settings.mutedWindows = muted
@@ -501,6 +553,7 @@ public enum AccountError: LocalizedError, Equatable {
     case exists(Account)
     case full(ProviderID)
     case cannotRemoveDefault(ProviderID)
+    case invalidBaseURL(String)
 
     public var errorDescription: String? {
         switch self {
@@ -508,8 +561,12 @@ public enum AccountError: LocalizedError, Equatable {
         case .invalidName: "Use up to 20 letters, digits, '-', '_' or '.', not starting with '-'."
         case .emptyKey: "Paste the account's API key."
         case .exists(let account): "\(account.title) already exists."
-        case .full(let provider): "\(provider.title) already has \(Account.limitPerProvider) accounts: the default and two named ones."
+        case .full(let provider):
+            provider.hasDefaultAccount
+                ? "\(provider.title) already has \(provider.accountLimit) accounts: the default and \(provider.accountLimit - 1) named ones."
+                : "There are already \(provider.accountLimit) custom providers."
         case .cannotRemoveDefault(let provider): "The default \(provider.title) account can be hidden, not removed."
+        case .invalidBaseURL(let value): "'\(value)' is not an http(s) address, such as https://api.example.com/v1."
         }
     }
 }

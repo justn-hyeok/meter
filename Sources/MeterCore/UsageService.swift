@@ -29,6 +29,9 @@ public struct UsageService: Sendable {
         case .openCodeGo: OpenCodeGoUsageProvider(credential: OpenCodeGoCredential(store: secrets, account: account))
         case .openRouter: OpenRouterUsageProvider(store: secrets, account: account)
         case .hive: account.name == nil ? HiveUsageProvider(store: secrets) : nil
+        case .openCodeZen: OpenCodeZenUsageProvider(credential: OpenCodeZenCredential(store: secrets, account: account))
+        case .githubCopilot: account.name == nil ? GitHubCopilotUsageProvider() : nil
+        case .custom: account.name == nil ? nil : CustomUsageProvider(store: secrets, account: account)
         }
     }
 
