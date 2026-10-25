@@ -203,6 +203,22 @@ public struct ClaudeSubscriptionCredential: CredentialSource {
     }
 }
 
+/// OpenCode files every provider it is connected to in one auth file, so a key is only ever
+/// read from the entry that belongs to it: the file also holds Zen's key, and Go's route
+/// refuses that one.
+private enum OpenCodeAuthFile {
+    static func key(entry: String, at file: URL) -> String? {
+        guard let data = try? Data(contentsOf: file),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let provider = root[entry] as? [String: Any],
+              let key = provider["key"] as? String,
+              !key.isEmpty else {
+            return nil
+        }
+        return key
+    }
+}
+
 /// OpenCode keeps the OpenCode Go key it was connected with in its own auth file, under
 /// `opencode-go`, and the usage route the OpenCode console reads accepts that key.
 public struct OpenCodeGoCredential: CredentialSource {
@@ -238,22 +254,136 @@ public struct OpenCodeGoCredential: CredentialSource {
         return cliKey()
     }
 
-    /// The key OpenCode stored when OpenCode Go was connected with `/connect`. The file holds
-    /// every provider OpenCode is connected to, so only that one entry is read.
-    public func cliKey() -> String? {
-        guard let data = try? Data(contentsOf: cliAuthFile),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let entry = root["opencode-go"] as? [String: Any],
-              let key = entry["key"] as? String,
-              !key.isEmpty else {
-            return nil
-        }
-        return key
-    }
+    /// The key OpenCode stored when OpenCode Go was connected with `/connect`.
+    public func cliKey() -> String? { OpenCodeAuthFile.key(entry: "opencode-go", at: cliAuthFile) }
 
     public func authHeaders() throws -> [String: String] {
         guard let key = apiKey() else { throw CredentialError.missingKey(for: account, signInAt: "opencode.ai") }
         return ["Authorization": "Bearer \(key)"]
+    }
+}
+
+/// The same opencode.ai account as Go, filed by OpenCode under plain `opencode`. Zen's AI
+/// SDK key and Go's plan key are separate entries even when they belong to one account.
+public struct OpenCodeZenCredential: CredentialSource {
+    public static let environmentKey = "OPENCODE_API_KEY"
+    public static let cliAuthFile = OpenCodeGoCredential.cliAuthFile
+
+    private let store: SecretStore
+    private let environment: [String: String]
+    private let cliAuthFile: URL
+    private let account: Account
+
+    public init(
+        store: SecretStore = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        cliAuthFile: URL = OpenCodeZenCredential.cliAuthFile,
+        account: Account = Account(.openCodeZen)
+    ) {
+        self.store = store
+        self.environment = environment
+        self.cliAuthFile = cliAuthFile
+        self.account = account
+    }
+
+    public var sourceDescription: String { "OpenCode Zen API key" }
+
+    /// The same precedence as Go: a named account has only its stored key, because the shell
+    /// variable and OpenCode's login belong to the default account.
+    public func apiKey() -> String? {
+        guard account.name == nil else { return store.secret(for: account) }
+        if let key = environment[Self.environmentKey], !key.isEmpty { return key }
+        if let key = store.secret(for: account) { return key }
+        return cliKey()
+    }
+
+    public func cliKey() -> String? { OpenCodeAuthFile.key(entry: "opencode", at: cliAuthFile) }
+
+    public func authHeaders() throws -> [String: String] {
+        guard let key = apiKey() else { throw CredentialError.missingKey(for: account, signInAt: "opencode.ai") }
+        return ["Authorization": "Bearer \(key)"]
+    }
+}
+
+/// The GitHub token Copilot's own quota route accepts. Someone who runs Copilot from the
+/// GitHub CLI already has one, so its `auth token` is the last resort rather than a second
+/// sign-in to explain.
+public struct GitHubCopilotCredential: CredentialSource {
+    /// `gh` honours these too, so a token in them is the token every other GitHub tool uses.
+    public static let environmentKeys = ["GH_TOKEN", "GITHUB_TOKEN"]
+    /// Homebrew on Apple silicon, Homebrew on Intel, then the system. An app Finder launches
+    /// inherits no shell, so `gh` is looked for by path rather than through `PATH`.
+    public static let ghPaths = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
+    static let signInHint = "github.com (or run 'gh auth login')"
+
+    private let environment: [String: String]
+    private let readCLIToken: @Sendable () -> String?
+
+    public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+        self.init(environment: environment, readCLIToken: { Self.gitHubCLIToken() })
+    }
+
+    init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        readCLIToken: @escaping @Sendable () -> String?
+    ) {
+        self.environment = environment
+        self.readCLIToken = readCLIToken
+    }
+
+    public var sourceDescription: String {
+        Self.environmentKeys.first { !(environment[$0] ?? "").isEmpty }.map { "environment \($0)" } ?? "gh auth"
+    }
+
+    public func token() -> String? {
+        for key in Self.environmentKeys {
+            if let value = environment[key], !value.isEmpty { return value }
+        }
+        return readCLIToken()
+    }
+
+    /// The quota route is GitHub's API, which asks callers to identify themselves; the
+    /// editor headers are the ones GitHub documents as accepted alongside a Copilot token.
+    public func authHeaders() throws -> [String: String] {
+        guard let token = token() else { throw CredentialError.signInRequired(Self.signInHint) }
+        return [
+            "Authorization": "token \(token)",
+            "Accept": "application/json",
+            "Editor-Version": "vscode/1.99.0",
+            "User-Agent": "Meter",
+        ]
+    }
+
+    /// What `gh auth token` prints. Never logged, and terminated after five seconds so a
+    /// `gh` left prompting or waiting on the network cannot hold the whole refresh open.
+    static func gitHubCLIToken() -> String? {
+        guard let executable = ghExecutable() else { return nil }
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = executable
+        process.arguments = ["auth", "token"]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+
+        let timeout = DispatchWorkItem {
+            if process.isRunning { process.terminate() }
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: timeout)
+        defer { timeout.cancel() }
+
+        // Read before waiting: a pipe fills at 64 KB, and a process blocked on a full pipe
+        // would never exit.
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let token = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return token.isEmpty ? nil : token
+    }
+
+    static func ghExecutable() -> URL? {
+        ghPaths.first { FileManager.default.isExecutableFile(atPath: $0) }
+            .map { URL(fileURLWithPath: $0) }
     }
 }
 

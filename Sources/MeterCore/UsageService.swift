@@ -29,9 +29,9 @@ public struct UsageService: Sendable {
         case .openCodeGo: OpenCodeGoUsageProvider(credential: OpenCodeGoCredential(store: secrets, account: account))
         case .openRouter: OpenRouterUsageProvider(store: secrets, account: account)
         case .hive: account.name == nil ? HiveUsageProvider(store: secrets) : nil
-        // Filled in by their own providers; until then they say so rather than vanish.
-        case .openCodeZen: PendingProvider(id: .openCodeZen)
-        case .githubCopilot: account.name == nil ? PendingProvider(id: .githubCopilot) : nil
+        case .openCodeZen: OpenCodeZenUsageProvider(credential: OpenCodeZenCredential(store: secrets, account: account))
+        case .githubCopilot: account.name == nil ? GitHubCopilotUsageProvider() : nil
+        // Filled in by its own provider; until then it says so rather than vanish.
         case .custom: account.name == nil ? nil : PendingProvider(id: .custom)
         }
     }
