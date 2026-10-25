@@ -81,3 +81,20 @@ private func unsignedJWT(_ claims: [String: Any]) throws -> String {
         try CursorAppSession.accessToken(databaseURL: directory.appending(path: "missing.vscdb"))
     }
 }
+
+/// After `cursor-agent login` the keychain holds a new token, but the process cached the
+/// expired one; finding it expired must send the read back to the keychain.
+@Test func cursorReadsAgainWhenTheCachedTokenHasExpired() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let expired = try unsignedJWT(["sub": "user_old", "exp": 1_799_999_000])
+    let current = try unsignedJWT(["sub": "user_new", "exp": 1_800_003_600])
+    let reads = Counter()
+    let credential = CursorSessionCredential(readTokens: [{ reads.next() == 0 ? expired : current }], now: { now })
+    #expect(try credential.authHeaders()["Cookie"]?.hasPrefix("WorkosCursorSessionToken=user_new") == true)
+}
+
+private final class Counter: @unchecked Sendable {
+    private var value = 0
+    private let lock = NSLock()
+    func next() -> Int { lock.withLock { defer { value += 1 }; return value } }
+}

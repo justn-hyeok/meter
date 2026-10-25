@@ -79,6 +79,17 @@ public struct CursorSessionCredential: CredentialSource {
     }
 
     private func currentToken() throws -> String {
+        do {
+            return try firstCurrentToken()
+        } catch CredentialError.signInRequired {
+            // The keychain read is cached for the life of the process, so an expired token
+            // would be found again after `cursor-agent login` wrote a new one. Read again.
+            invalidate()
+            return try firstCurrentToken()
+        }
+    }
+
+    private func firstCurrentToken() throws -> String {
         var firstError: (any Error)?
         var foundExpired = false
         for read in readTokens {
