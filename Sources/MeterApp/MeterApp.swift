@@ -96,6 +96,11 @@ private struct MeterMenu: View {
         .fixedSize(horizontal: false, vertical: true)
         .overlay(alignment: .topLeading) { liftedTile }
         .coordinateSpace(.named(CardDrag.space))
+        // "Add key…" in a small tile opens the settings window, which needs objects only the
+        // menu holds.
+        .environment(\.openMeterSettings, { [store, alerts, hotKeys] in
+            SettingsWindow.show(store: store, alerts: alerts, hotKeys: hotKeys)
+        })
         // Opening the menu is the moment a keychain dialog is welcome; the five-minute
         // refresh never raises one.
         .background(MenuOpenObserver {
@@ -370,8 +375,14 @@ struct IssueRow: View {
     }
 
     private var detail: String {
+        Self.detail(provider: provider, issue: issue, snapshot: snapshot)
+    }
+
+    /// The whole explanation, for the tooltip. Shared with the compact tiles, whose one
+    /// line says only the first sentence of it.
+    nonisolated static func detail(provider: ProviderID, issue: SnapshotIssue?, snapshot: UsageSnapshot) -> String {
         var lines = [provider.signInFix?.instruction ?? snapshot.message ?? ""]
-        if case .expiresSoon(let date) = issue {
+        if case .expiresSoon(let date)? = issue {
             lines.insert("Sign-in ends \(date.formatted(date: .abbreviated, time: .shortened))", at: 0)
         }
         if snapshot.state == .stale {
@@ -389,7 +400,12 @@ struct ProviderTile: View {
     /// The copy drawn under the pointer during a drag: no drag surface of its own.
     var lifted = false
 
+    @Environment(\.openMeterSettings) private var openSettings
+
     private var snapshot: UsageSnapshot? { store.snapshots[account] }
+    /// The grid hands each tile its size through the account; nothing is passed in, so a
+    /// tile redrawn after a right-click is the new size at once.
+    private var size: TileSize { store.tileSize(account) }
     private var muted: Set<String> {
         Set(store.muted.filter { $0.account == account }.map(\.bucketID))
     }
@@ -398,6 +414,23 @@ struct ProviderTile: View {
     }
 
     var body: some View {
+        tile
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: MeterStyle.tileRadius))
+            .overlay {
+                // A tile at its limit is outlined, so it is found before any figure is read.
+                if let color = severity.color {
+                    RoundedRectangle(cornerRadius: MeterStyle.tileRadius).strokeBorder(color.opacity(0.7), lineWidth: 1)
+                }
+            }
+            .contextMenu { menu }
+    }
+
+    @ViewBuilder private var tile: some View {
+        if size == .full { full } else { compact }
+    }
+
+    /// The 2×2 tile: every window, the key field and the issue row, as it has always been.
+    private var full: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 10) {
                 header
@@ -427,28 +460,53 @@ struct ProviderTile: View {
         }
         .padding(12)
         .frame(height: MeterStyle.tileHeight)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: MeterStyle.tileRadius))
-        .overlay {
-            // A tile at its limit is outlined, so it is found before any figure is read.
-            if let color = severity.color {
-                RoundedRectangle(cornerRadius: MeterStyle.tileRadius).strokeBorder(color.opacity(0.7), lineWidth: 1)
+    }
+
+    /// The 2×1 and 1×2 tiles: one dial and one figure, with a single line for anything that
+    /// needs explaining. The copy and open buttons of `IssueRow` stay in the full tile.
+    private var compact: some View {
+        let notice = CompactNotice.find(snapshot, account: account, needsKey: store.needsKey(account))
+        return VStack(alignment: .leading, spacing: 2) {
+            CompactTileContent(account: account, store: store, size: size, showsCaption: notice == nil)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // The figures only: "Add key…" below is a button, and a drag surface over it
+                // would take the click.
+                .overlay { if !lifted { dragSurface } }
+            if let notice {
+                CompactNoticeLine(notice: notice, openSettings: openSettings)
             }
         }
-        .contextMenu {
-            Button("Refresh \(account.title)") { Task { await store.refresh(account, interactive: true) } }
-            Button("Hide \(account.title)") { store.setEnabled(false, for: account) }
-            // A window that sits full by design, such as a plan's bonus models, would be red
-            // and alerting for good. Unchecking it keeps the figure and drops the warning.
-            let windows = snapshot?.buckets.filter { $0.fractionUsed != nil } ?? []
-            if !windows.isEmpty {
-                Section("Warn when nearly used") {
-                    ForEach(windows) { bucket in
-                        let key = BucketKey(account: account, bucketID: bucket.id)
-                        Toggle(bucket.label, isOn: Binding(
-                            get: { !store.isMuted(key) },
-                            set: { store.setMuted(!$0, key) }
-                        ))
+        .padding(CompactStyle.padding)
+        .frame(height: CompactStyle.height(for: size))
+    }
+
+    @ViewBuilder private var menu: some View {
+        Button("Refresh \(account.title)") { Task { await store.refresh(account, interactive: true) } }
+        Button("Hide \(account.title)") { store.setEnabled(false, for: account) }
+        Section("Size") {
+            ForEach(TileSize.offered(for: snapshot), id: \.self) { option in
+                Button {
+                    store.setTileSize(option, for: account)
+                } label: {
+                    if option == size {
+                        Label(option.title, systemImage: "checkmark")
+                    } else {
+                        Text(option.title)
                     }
+                }
+            }
+        }
+        // A window that sits full by design, such as a plan's bonus models, would be red
+        // and alerting for good. Unchecking it keeps the figure and drops the warning.
+        let windows = snapshot?.buckets.filter { $0.fractionUsed != nil } ?? []
+        if !windows.isEmpty {
+            Section("Warn when nearly used") {
+                ForEach(windows) { bucket in
+                    let key = BucketKey(account: account, bucketID: bucket.id)
+                    Toggle(bucket.label, isOn: Binding(
+                        get: { !store.isMuted(key) },
+                        set: { store.setMuted(!$0, key) }
+                    ))
                 }
             }
         }
