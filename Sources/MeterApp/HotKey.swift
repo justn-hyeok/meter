@@ -1,5 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
+import MeterCore
+import Observation
 
 /// A system-wide shortcut that opens the menu.
 ///
@@ -8,8 +10,6 @@ import Carbon.HIToolbox
 /// delivered to this app directly and asks for nothing.
 @MainActor
 final class GlobalHotKey {
-    static let openMenuDescription = "⌃⌥M"
-
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private let action: @MainActor () -> Void
@@ -31,9 +31,56 @@ final class GlobalHotKey {
         RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), identifier, GetApplicationEventTarget(), 0, &hotKey)
     }
 
-    /// ⌃⌥M, which no standard macOS shortcut claims.
-    static func openMenu(_ action: @escaping @MainActor () -> Void) -> GlobalHotKey {
-        GlobalHotKey(keyCode: kVK_ANSI_M, modifiers: controlKey | optionKey, action: action)
+    /// Stops the shortcut and drops its handler, so replacing it does not leave the old
+    /// combination live.
+    func unregister() {
+        if let hotKey {
+            UnregisterEventHotKey(hotKey)
+            self.hotKey = nil
+        }
+        if let handler {
+            RemoveEventHandler(handler)
+            self.handler = nil
+        }
+    }
+}
+
+/// The shortcut the app actually has registered, and the one the settings window edits.
+///
+/// A registered hot key cannot be changed in place, so applying a new shortcut saves it,
+/// tears down the old registration and registers the new one. Everything that shows the
+/// shortcut reads it here, so the menu footer and the settings row cannot disagree.
+@MainActor
+@Observable
+final class HotKeyController {
+    /// The saved shortcut; nil means the default, ⌃⌥M, and is how a fresh install reads.
+    private(set) var setting: HotKeySetting?
+    private var hotKey: GlobalHotKey?
+    private let settings: MeterSettings
+    private let action: @MainActor () -> Void
+
+    init(settings: MeterSettings = MeterSettings(), action: @escaping @MainActor () -> Void) {
+        self.settings = settings
+        self.action = action
+        self.setting = settings.hotKey
+    }
+
+    /// The shortcut in force, default included.
+    var current: HotKeySetting { setting ?? .standard }
+
+    /// The shortcut as it reads, or nil when it is switched off.
+    var display: String? { current.isEnabled ? current.display : nil }
+
+    /// Saves `setting` and registers it in place of the previous one. Nil restores the
+    /// default; a switched-off setting registers nothing.
+    func apply(_ setting: HotKeySetting?) {
+        self.setting = setting
+        settings.hotKey = setting
+        hotKey?.unregister()
+        hotKey = nil
+        let resolved = setting ?? .standard
+        guard resolved.isEnabled else { return }
+        hotKey = GlobalHotKey(keyCode: resolved.keyCode, modifiers: resolved.modifiers, action: action)
     }
 }
 

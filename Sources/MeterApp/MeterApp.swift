@@ -7,7 +7,8 @@ struct MeterApp: App {
     @State private var store = UsageStore()
     @State private var tokens = TokenStore()
     @State private var alerts = AlertCenter()
-    @State private var hotKey: GlobalHotKey?
+    @State private var hotKeys = HotKeyController(action: { MenuBarToggle.toggle() })
+    @State private var isHotKeyReady = false
 
     init() {
         // `--gallery`: a development window showing every tile state in light and dark.
@@ -18,13 +19,18 @@ struct MeterApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MeterMenu(store: store, tokens: tokens, alerts: alerts)
+            MeterMenu(store: store, tokens: tokens, alerts: alerts, hotKeys: hotKeys)
         } label: {
             // MenuBarExtra reserves space for an arbitrary label view without drawing it,
             // but it does paint an image: the gauge is drawn into one.
             Image(nsImage: MenuBarIcon.image(usage: store.highestUsage, unavailable: store.isAllUnavailable))
                 .task {
-                    if hotKey == nil { hotKey = .openMenu { MenuBarToggle.toggle() } }
+                    // The label can be drawn more than once; the registered hot key must not
+                    // be torn down and rebuilt each time.
+                    if !isHotKeyReady {
+                        isHotKeyReady = true
+                        hotKeys.apply(hotKeys.setting)
+                    }
                     store.onUpdate = { [store, alerts] in alerts.check(Array(store.snapshots.values), muted: store.muted) }
                     store.start()
                 }
@@ -32,7 +38,7 @@ struct MeterApp: App {
         .menuBarExtraStyle(.window)
 
         Settings {
-            SettingsView(store: store, alerts: alerts)
+            SettingsView(store: store, alerts: alerts, hotKeys: hotKeys)
         }
     }
 }
@@ -48,6 +54,7 @@ private struct MeterMenu: View {
     @Bindable var store: UsageStore
     @Bindable var tokens: TokenStore
     let alerts: AlertCenter
+    let hotKeys: HotKeyController
     @State private var tab = MenuTab.limits
     @State private var drag = CardDrag()
     @State private var cardsHeight: CGFloat = 0
@@ -87,7 +94,7 @@ private struct MeterMenu: View {
             }
             .frame(height: min(cardsHeight, maxCardsHeight))
             Divider()
-            MenuFooter(alerts: alerts)
+            MenuFooter(alerts: alerts, hotKeys: hotKeys)
         }
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
@@ -184,6 +191,7 @@ private struct MenuHeader: View {
 
 private struct MenuFooter: View {
     @Bindable var alerts: AlertCenter
+    let hotKeys: HotKeyController
     @State private var loginItemFailure: String?
 
     var body: some View {
@@ -210,8 +218,10 @@ private struct MenuFooter: View {
                 }
                 Spacer()
                 SettingsButton()
-                // The shortcut was in the README and nowhere on screen.
-                Text("⌃⌥M").foregroundStyle(.tertiary).help("Opens and closes Meter from anywhere")
+                // The shortcut was in the README and nowhere on screen, and it changes now.
+                if let display = hotKeys.display {
+                    Text(display).foregroundStyle(.tertiary).help("Opens and closes Meter from anywhere")
+                }
                 Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
             }
             if let loginItemFailure {

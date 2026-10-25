@@ -7,10 +7,11 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var store: UsageStore
     let alerts: AlertCenter
+    let hotKeys: HotKeyController
 
     var body: some View {
         TabView {
-            GeneralSettingsTab(store: store, alerts: alerts)
+            GeneralSettingsTab(store: store, alerts: alerts, hotKeys: hotKeys)
                 .tabItem { Label("General", systemImage: "gearshape") }
             ProvidersSettingsTab(store: store)
                 .tabItem { Label("Providers", systemImage: "square.grid.2x2") }
