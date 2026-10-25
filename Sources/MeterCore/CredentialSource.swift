@@ -78,6 +78,12 @@ public struct CursorSessionCredential: CredentialSource {
         return ["Cookie": "WorkosCursorSessionToken=\(subject)%3A%3A\(token)"]
     }
 
+    /// When the session in use ends. Nothing on this Mac renews it: `cursor-agent` leaves
+    /// its token to expire, so the menu warns ahead of time.
+    public func expiry() -> Date? {
+        (try? currentToken()).flatMap(JWT.expiry)
+    }
+
     private func currentToken() throws -> String {
         do {
             return try firstCurrentToken()

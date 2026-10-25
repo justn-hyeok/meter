@@ -135,6 +135,39 @@ public enum SnapshotState: String, Codable, Sendable {
     case live, stale, unavailable
 }
 
+/// Something the user can act on, beside the figures. Carried as data rather than read out
+/// of `message`, so the menu can offer the fix and an alert can fire once on the change.
+public enum SnapshotIssue: Codable, Sendable, Equatable {
+    /// The credential was refused or has expired; signing in again is the fix.
+    case signInRequired
+    /// The session works now but ends at this time, and nothing on this Mac will renew it.
+    case expiresSoon(Date)
+}
+
+/// How to sign in again, for the providers whose session belongs to another app or CLI.
+/// Providers Meter holds a key for are fixed in the key field instead.
+public struct SignInFix: Sendable, Equatable {
+    public let instruction: String
+    public let command: String?
+    public let url: URL?
+}
+
+extension ProviderID {
+    public var signInFix: SignInFix? {
+        switch self {
+        case .claude: SignInFix(instruction: "Run claude and type /login", command: "claude", url: nil)
+        case .codex: SignInFix(instruction: "Run codex login", command: "codex login", url: nil)
+        case .cursor: SignInFix(instruction: "Run cursor-agent login, or sign in to the Cursor app",
+                                command: "cursor-agent login", url: URL(string: "https://cursor.com/dashboard"))
+        case .openCodeGo: SignInFix(instruction: "Sign in at opencode.ai and copy a new key",
+                                    command: nil, url: URL(string: "https://opencode.ai/auth"))
+        case .commandCode: SignInFix(instruction: "Sign in again at commandcode.ai",
+                                     command: nil, url: URL(string: "https://commandcode.ai"))
+        case .deepSeek, .openRouter: nil
+        }
+    }
+}
+
 public struct UsageSnapshot: Identifiable, Codable, Sendable, Equatable {
     public var id: Account { accountID }
     public private(set) var provider: ProviderID
@@ -145,14 +178,18 @@ public struct UsageSnapshot: Identifiable, Codable, Sendable, Equatable {
     public let source: String
     public let state: SnapshotState
     public let message: String?
+    /// Absent from JSON written before it existed, and ignored by builds that predate it.
+    public var issue: SnapshotIssue?
 
-    public init(provider: ProviderID, buckets: [UsageBucket], fetchedAt: Date, source: String, state: SnapshotState, message: String?) {
+    public init(provider: ProviderID, buckets: [UsageBucket], fetchedAt: Date, source: String, state: SnapshotState,
+                message: String?, issue: SnapshotIssue? = nil) {
         self.provider = provider
         self.buckets = buckets
         self.fetchedAt = fetchedAt
         self.source = source
         self.state = state
         self.message = message
+        self.issue = issue
     }
 
     public var accountID: Account { Account(provider, name: account) }
@@ -165,8 +202,15 @@ public struct UsageSnapshot: Identifiable, Codable, Sendable, Equatable {
         return copy
     }
 
-    public static func unavailable(_ provider: ProviderID, _ message: String) -> Self {
-        .init(provider: provider, buckets: [], fetchedAt: .now, source: "none", state: .unavailable, message: message)
+    public static func unavailable(_ provider: ProviderID, _ message: String, issue: SnapshotIssue? = nil) -> Self {
+        .init(provider: provider, buckets: [], fetchedAt: .now, source: "none", state: .unavailable, message: message, issue: issue)
+    }
+
+    /// The one place a provider's failure becomes a snapshot, so a refused credential is
+    /// marked as a sign-in problem whichever provider it came from.
+    public static func unavailable(_ provider: ProviderID, _ what: String, error: any Error) -> Self {
+        let signIn = (error as? CredentialError).map { if case .signInRequired = $0 { true } else { false } } ?? false
+        return unavailable(provider, "\(what): \(error.localizedDescription)", issue: signIn ? .signInRequired : nil)
     }
 }
 

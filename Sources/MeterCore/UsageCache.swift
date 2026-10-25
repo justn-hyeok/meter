@@ -39,7 +39,8 @@ public struct UsageCache: Sendable {
                     fetchedAt: snapshot.fetchedAt,
                     source: snapshot.source,
                     state: .stale,
-                    message: snapshot.message ?? "cached observation from \(snapshot.fetchedAt.formatted())"
+                    message: snapshot.message ?? "cached observation from \(snapshot.fetchedAt.formatted())",
+                    issue: snapshot.issue
                 ).for(snapshot.accountID)
                 continue
             }

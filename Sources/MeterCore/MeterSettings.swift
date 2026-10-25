@@ -93,6 +93,24 @@ public struct MeterSettings {
         provider != .cursor
     }
 
+    // MARK: - Alerts
+
+    private static let alertsEnabledKey = "alerts.enabled"
+    private static let alertsSentKey = "alerts.sent"
+
+    /// On unless switched off: an alert is only ever sent for a limit nearly reached or a
+    /// sign-in that stopped working.
+    public var alertsEnabled: Bool {
+        get { defaults.object(forKey: Self.alertsEnabledKey) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Self.alertsEnabledKey) }
+    }
+
+    /// The alerts already sent, kept so a relaunch does not send them again.
+    public var alertsSent: Set<String> {
+        get { Set(defaults.stringArray(forKey: Self.alertsSentKey) ?? []) }
+        nonmutating set { defaults.set(newValue.sorted(), forKey: Self.alertsSentKey) }
+    }
+
     private static let migrationKey = "settings.migration"
 
     /// Pins the choices of an install that predates the wider default.

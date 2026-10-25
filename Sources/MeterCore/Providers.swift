@@ -99,12 +99,14 @@ struct CodexUsageProvider: UsageProvider {
                 request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
             }
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                throw URLError(.badServerResponse)
+            guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw CredentialError.signInRequired("chatgpt.com (or run 'codex login')")
             }
+            guard http.statusCode == 200 else { throw URLError(.badServerResponse) }
             return try CodexUsageParser.parse(data)
         } catch {
-            return .unavailable(id, "Codex usage unavailable: \(error.localizedDescription)")
+            return .unavailable(id, "Codex usage unavailable", error: error)
         }
     }
 }
@@ -329,7 +331,7 @@ struct DeepSeekUsageProvider: UsageProvider {
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw URLError(.badServerResponse) }
             return try DeepSeekUsageParser.parse(data)
         } catch {
-            return .unavailable(id, "DeepSeek unavailable: \(error.localizedDescription)")
+            return .unavailable(id, "DeepSeek unavailable", error: error)
         }
     }
 }
@@ -391,7 +393,7 @@ struct OpenRouterUsageProvider: UsageProvider {
             guard http.statusCode == 200 else { throw ProviderHTTPError.unexpectedStatus(http.statusCode) }
             return try OpenRouterUsageParser.parse(data)
         } catch {
-            return .unavailable(id, "OpenRouter unavailable: \(error.localizedDescription)")
+            return .unavailable(id, "OpenRouter unavailable", error: error)
         }
     }
 }
@@ -506,6 +508,8 @@ enum AuthenticatedRequest {
 
 struct CursorUsageProvider: UsageProvider {
     let id = ProviderID.cursor
+    /// A day's notice: enough to sign in at a convenient moment rather than mid-task.
+    static let expiryWarning: TimeInterval = 86_400
     private let credential: any CredentialSource
 
     init(credential: any CredentialSource = CursorSessionCredential()) {
@@ -524,9 +528,14 @@ struct CursorUsageProvider: UsageProvider {
                 credential: credential,
                 signInAt: CursorSessionCredential.signInHint
             )
-            return try CursorUsageParser.parse(data)
+            var snapshot = try CursorUsageParser.parse(data)
+            if let expiry = (credential as? CursorSessionCredential)?.expiry(),
+               expiry.timeIntervalSinceNow < Self.expiryWarning {
+                snapshot.issue = .expiresSoon(expiry)
+            }
+            return snapshot
         } catch {
-            return .unavailable(id, "Cursor unavailable: \(error.localizedDescription)")
+            return .unavailable(id, "Cursor unavailable", error: error)
         }
     }
 }
@@ -585,7 +594,7 @@ struct OpenCodeGoUsageProvider: UsageProvider {
             )
             return try OpenCodeGoUsageParser.parse(data)
         } catch {
-            return .unavailable(id, "OpenCode Go unavailable: \(error.localizedDescription)")
+            return .unavailable(id, "OpenCode Go unavailable", error: error)
         }
     }
 }
@@ -627,7 +636,7 @@ struct CommandCodeUsageProvider: UsageProvider {
             ])
             return try CommandCodeUsageParser.parse(combined)
         } catch {
-            return .unavailable(id, "Command Code unavailable: \(error.localizedDescription)")
+            return .unavailable(id, "Command Code unavailable", error: error)
         }
     }
 
@@ -695,7 +704,7 @@ struct ClaudeUsageProvider: UsageProvider {
             )
             return try ClaudeUsageParser.parse(data)
         } catch {
-            return .unavailable(id, "Claude unavailable: \(error.localizedDescription)")
+            return .unavailable(id, "Claude unavailable", error: error)
         }
     }
 }

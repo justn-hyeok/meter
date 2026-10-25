@@ -237,7 +237,8 @@ struct MeterCLIApplication {
                 if incoming.state == .unavailable, let previous = cached[incoming.accountID] {
                     return UsageSnapshot(provider: previous.provider, buckets: previous.buckets,
                                          fetchedAt: previous.fetchedAt, source: previous.source,
-                                         state: .stale, message: incoming.message).for(previous.accountID)
+                                         state: .stale, message: incoming.message,
+                                         issue: incoming.issue).for(previous.accountID)
                 }
                 return incoming
             }

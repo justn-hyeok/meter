@@ -28,6 +28,8 @@ public struct BucketKey: Hashable, Sendable {
 /// windows at the same percentage could be bold in one and plain in the other.
 public enum TightestLimit {
     public static let threshold = 0.8
+    /// Where a window counts as all but used up: red in the menu, and a second alert.
+    public static let critical = 0.95
 
     /// Ties go to the window listed first, so the bold row is the first of the equals the
     /// reader comes to.
@@ -68,6 +70,8 @@ public final class UsageStore {
     /// Cached so the menu does not probe the machine from inside a SwiftUI body.
     public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
     public var refreshInterval: TimeInterval = 300
+    /// Called after every refresh lands, for work that follows the figures, such as alerts.
+    public var onUpdate: (@MainActor () -> Void)?
     /// Set while a card is being dragged. The drag moves cards without saving, so nothing may
     /// replace the order or the account list under it until the drag ends.
     public var isReordering = false
@@ -176,6 +180,7 @@ public final class UsageStore {
 
         // A refresh that produced nothing usable must not advertise itself as the last
         // update; the menu would otherwise show a fresh time above stale figures.
+        defer { onUpdate?() }
         if results.contains(where: { incoming in
             incoming.state == .live && snapshots[incoming.accountID]?.state == .live
                 && snapshots[incoming.accountID]?.fetchedAt == incoming.fetchedAt
@@ -303,6 +308,7 @@ public final class UsageStore {
         }
         merge(snapshot, token: token)
         if let stored = snapshots[account] { try? cache?.save([stored], startedAt: startedAt) }
+        onUpdate?()
     }
 
     func refresh(_ provider: ProviderID, interactive: Bool = false) async {
@@ -381,7 +387,8 @@ public final class UsageStore {
                 fetchedAt: previous.fetchedAt,
                 source: previous.source,
                 state: .stale,
-                message: incoming.message
+                message: incoming.message,
+                issue: incoming.issue
             ).for(account)
         } else {
             snapshots[account] = incoming

@@ -6,31 +6,23 @@ import MeterCore
 struct MeterApp: App {
     @State private var store = UsageStore()
     @State private var tokens = TokenStore()
+    @State private var alerts = AlertCenter()
     @State private var hotKey: GlobalHotKey?
 
     var body: some Scene {
         MenuBarExtra {
-            MeterMenu(store: store, tokens: tokens)
+            MeterMenu(store: store, tokens: tokens, alerts: alerts)
         } label: {
-            // Back to the one form that actually paints. MenuBarExtra reserves space for an
-            // arbitrary label view without drawing it, and Text(Image(systemName:)) drew the
-            // number but not the symbol - the menu bar was left showing a bare "100%" next to
-            // the battery's own, which reads as no Meter at all.
-            Label("Meter", systemImage: icon)
+            // MenuBarExtra reserves space for an arbitrary label view without drawing it,
+            // but it does paint an image: the gauge is drawn into one.
+            Image(nsImage: MenuBarIcon.image(usage: store.highestUsage, unavailable: store.isAllUnavailable))
                 .task {
                     if hotKey == nil { hotKey = .openMenu { MenuBarToggle.toggle() } }
+                    store.onUpdate = { [store, alerts] in alerts.check(Array(store.snapshots.values)) }
                     store.start()
                 }
         }
         .menuBarExtraStyle(.window)
-    }
-
-    private var icon: String {
-        if store.isAllUnavailable { return "exclamationmark.triangle" }
-        guard let usage = store.highestUsage else { return "gauge.with.dots.needle.0percent" }
-        if usage >= 0.95 { return "gauge.with.dots.needle.100percent" }
-        if usage >= TightestLimit.threshold { return "gauge.with.dots.needle.67percent" }
-        return "gauge.with.dots.needle.33percent"
     }
 }
 
@@ -44,6 +36,7 @@ enum MenuTab: String, CaseIterable, Identifiable {
 private struct MeterMenu: View {
     @Bindable var store: UsageStore
     @Bindable var tokens: TokenStore
+    let alerts: AlertCenter
     @State private var tab = MenuTab.limits
     @State private var drag = CardDrag()
     @State private var cardsHeight: CGFloat = 0
@@ -83,7 +76,7 @@ private struct MeterMenu: View {
             }
             .frame(height: min(cardsHeight, maxCardsHeight))
             Divider()
-            MenuFooter()
+            MenuFooter(alerts: alerts)
         }
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
@@ -93,6 +86,7 @@ private struct MeterMenu: View {
         // refresh never raises one.
         .background(MenuOpenObserver {
             Task { await store.menuOpened() }
+            Task { await alerts.refreshAuthorization() }
             if tab == .tokens { Task { await tokens.load() } }
         })
     }
@@ -178,6 +172,7 @@ private struct MenuHeader: View {
 }
 
 private struct MenuFooter: View {
+    @Bindable var alerts: AlertCenter
     @State private var loginItemFailure: String?
 
     var body: some View {
@@ -197,6 +192,11 @@ private struct MenuFooter: View {
                     ))
                     .toggleStyle(.checkbox)
                 }
+                if AppBundle.isBundled {
+                    Toggle("Alerts", isOn: $alerts.isEnabled)
+                        .toggleStyle(.checkbox)
+                        .help("Notify when a limit passes 80% and 95%, or a sign-in stops working")
+                }
                 Spacer()
                 // The shortcut was in the README and nowhere on screen.
                 Text("⌃⌥M").foregroundStyle(.tertiary).help("Opens and closes Meter from anywhere")
@@ -204,6 +204,12 @@ private struct MenuFooter: View {
             }
             if let loginItemFailure {
                 Text(loginItemFailure).foregroundStyle(.red)
+            }
+            if alerts.isEnabled, alerts.isDenied {
+                Button("Notifications are off for Meter in System Settings") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+                }
+                .buttonStyle(.link)
             }
         }
         .controlSize(.small)
@@ -242,6 +248,54 @@ private struct TileGrid: View {
                     .accessibilityAction(named: "Move down") { moveByKeyboard(account, 1) }
             }
         }
+    }
+}
+
+/// A problem the user can fix, with the fix one click away: copying the sign-in command,
+/// or opening the page. Outside the drag surface, so a click is never taken for a drag.
+private struct IssueRow: View {
+    let provider: ProviderID
+    let issue: SnapshotIssue
+    let snapshot: UsageSnapshot
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Label(title, systemImage: issue == .signInRequired ? "person.crop.circle.badge.exclamationmark" : "clock.badge.exclamationmark")
+                .lineLimit(1)
+                .foregroundStyle(issue == .signInRequired ? Color(nsColor: .systemOrange) : .secondary)
+                .help(detail)
+            Spacer(minLength: 0)
+            if let command = provider.signInFix?.command {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                .help("Copy '\(command)'")
+                .accessibilityLabel("Copy the sign-in command")
+            }
+            if let url = provider.signInFix?.url {
+                Button { NSWorkspace.shared.open(url) } label: { Image(systemName: "safari") }
+                    .help("Open \(url.host() ?? url.absoluteString)")
+                    .accessibilityLabel("Open the sign-in page")
+            }
+        }
+        .buttonStyle(.borderless)
+        .font(.caption)
+    }
+
+    private var title: String {
+        switch issue {
+        case .signInRequired: "Sign in again"
+        case .expiresSoon(let date): "Sign-in ends \(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))"
+        }
+    }
+
+    private var detail: String {
+        var lines = [provider.signInFix?.instruction ?? snapshot.message ?? ""]
+        if snapshot.state == .stale {
+            lines.append("Showing figures from \(snapshot.fetchedAt.formatted(.relative(presentation: .named)))")
+        }
+        return lines.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 }
 
@@ -328,7 +382,7 @@ private struct ProviderTile: View {
                 if let snapshot, !snapshot.buckets.isEmpty {
                     TileContent(buckets: snapshot.buckets)
                         .opacity(snapshot.state == .stale || isIdle(snapshot) ? 0.55 : 1)
-                    if snapshot.state == .stale { staleNote(snapshot) }
+                    if snapshot.state == .stale, snapshot.issue == nil { staleNote(snapshot) }
                 } else {
                     Text(snapshot?.message ?? "Waiting for refresh…")
                         .font(.caption)
@@ -343,6 +397,8 @@ private struct ProviderTile: View {
             // took the click away from it whenever the pointer drifted a point.
             if store.needsKey(account) {
                 KeyField(provider: account.provider, store: store)
+            } else if let snapshot, let issue = snapshot.issue {
+                IssueRow(provider: account.provider, issue: issue, snapshot: snapshot)
             }
         }
         .padding(12)
@@ -552,7 +608,7 @@ private enum Severity {
 
     init(_ fraction: Double?) {
         guard let fraction else { self = .calm; return }
-        if fraction >= 0.95 { self = .critical }
+        if fraction >= TightestLimit.critical { self = .critical }
         else if fraction >= TightestLimit.threshold { self = .warning }
         else { self = .calm }
     }
