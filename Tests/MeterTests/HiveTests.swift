@@ -61,16 +61,38 @@ private final class FakePortal: @unchecked Sendable {
     #expect(store.secret(for: .hive) == "renewed")
 }
 
-@Test func hiveWithNoWorkingSessionAsksForSignIn() async throws {
+/// Someone who had a session and lost it is told to sign in again, and alerted.
+@Test func hiveWithAnEndedSessionAsksForSignIn() async throws {
     let (store, directory) = tempStore()
     defer { try? FileManager.default.removeItem(at: directory) }
     try store.setSecret("expired", for: .hive)
     let provider = HiveUsageProvider(store: store, browserCookie: { "also-expired" }, send: FakePortal().send)
     let snapshot = await provider.fetch()
     #expect(snapshot.issue == .signInRequired)
+    #expect(snapshot.message == HiveUsageProvider.sessionEnded)
+}
 
-    let none = await HiveUsageProvider(store: store, browserCookie: { nil }, send: FakePortal().send).fetch()
-    #expect(none.issue == .signInRequired)
+/// Someone adding Hive for the first time is told how to connect it, and not alerted.
+@Test func hiveNeverConnectedSaysHowToConnect() async throws {
+    let (store, directory) = tempStore()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let snapshot = await HiveUsageProvider(store: store, browserCookie: { nil }, send: FakePortal().send).fetch()
+    #expect(snapshot.issue == .notConnected)
+    #expect(snapshot.message == HiveUsageProvider.notConnected)
+    #expect(UsageAlerts.evaluate([snapshot], sent: []).alerts.isEmpty)
+}
+
+/// The browser has a session but macOS has not let Meter read its cookies yet.
+@Test func hiveSaysWhichKeychainItemToAllow() async throws {
+    let (store, directory) = tempStore()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let locked = HiveUsageProvider(store: store, browserCookie: {
+        throw ChromiumCookies.KeyUnavailable(browser: "Arc", service: "Arc Safe Storage")
+    }, send: FakePortal().send)
+    let snapshot = await locked.fetch()
+    #expect(snapshot.issue == nil)
+    #expect(snapshot.message?.contains("Always Allow") == true)
+    #expect(snapshot.message?.contains("\"Arc Safe Storage\"") == true)
 }
 
 @Test func hiveFindsTheOrganizationWhereverTheProfileNestsIt() {

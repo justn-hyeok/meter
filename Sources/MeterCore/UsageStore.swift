@@ -160,7 +160,8 @@ public final class UsageStore {
             snapshotFetchStartedAt[account] = nil
         }
         settings.setEnabled(enabled, for: account)
-        if enabled && refreshOnEnable { Task { await refresh(account) } }
+        // Switched on from the menu, so someone is looking: a keychain dialog is welcome.
+        if enabled && refreshOnEnable { Task { await refresh(account, interactive: true) } }
     }
 
     public func start() {

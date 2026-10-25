@@ -45,7 +45,10 @@ public enum ChromiumCookies {
         if !best.row.plain.isEmpty {
             return Found(value: best.row.plain, expires: best.row.expires, browser: best.browser.name)
         }
-        let value = try decrypt(best.row.encrypted, password: key(best.browser), databaseVersion: best.row.databaseVersion)
+        let password: String
+        do { password = try key(best.browser) }
+        catch { throw KeyUnavailable(browser: best.browser.name, service: best.browser.safeStorageService) }
+        let value = try decrypt(best.row.encrypted, password: password, databaseVersion: best.row.databaseVersion)
         return Found(value: value, expires: best.row.expires, browser: best.browser.name)
     }
 
@@ -127,6 +130,17 @@ public enum ChromiumCookies {
             found.append(Row(plain: plain, encrypted: encrypted, expires: expires, databaseVersion: version))
         }
         return found
+    }
+
+    /// The cookie is there, but its browser's keychain item could not be read: macOS has
+    /// not been told yet that Meter may, or was told no.
+    public struct KeyUnavailable: LocalizedError, Equatable {
+        public let browser: String
+        public let service: String
+
+        public var errorDescription: String? {
+            "To read \(browser)'s session, choose Always Allow when macOS asks about \"\(service)\". Refresh to be asked again."
+        }
     }
 
     public enum DecryptionError: LocalizedError, Equatable {

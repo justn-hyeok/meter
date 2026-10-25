@@ -55,7 +55,7 @@ public enum UsageAlerts {
                         body: account.provider.signInFix?.instruction ?? "Sign in again before it does."
                     ))
                 }
-            case nil:
+            case .notConnected, nil:
                 break
             }
 

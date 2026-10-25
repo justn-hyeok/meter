@@ -142,6 +142,8 @@ public enum SnapshotState: String, Codable, Sendable {
 public enum SnapshotIssue: Codable, Sendable, Equatable {
     /// The credential was refused or has expired; signing in again is the fix.
     case signInRequired
+    /// Switched on but never connected: the tile explains how, and nothing alerts.
+    case notConnected
     /// The session works now but ends at this time, and nothing on this Mac will renew it.
     case expiresSoon(Date)
 }

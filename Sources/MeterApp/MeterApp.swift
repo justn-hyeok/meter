@@ -260,7 +260,7 @@ private struct IssueRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Label(title, systemImage: issue == .signInRequired ? "person.crop.circle.badge.exclamationmark" : "clock.badge.exclamationmark")
+            Label(title, systemImage: icon)
                 .lineLimit(1)
                 .foregroundStyle(issue == .signInRequired ? Color(nsColor: .systemOrange) : .secondary)
                 .help(detail)
@@ -283,9 +283,18 @@ private struct IssueRow: View {
         .font(.caption)
     }
 
+    private var icon: String {
+        switch issue {
+        case .signInRequired: "person.crop.circle.badge.exclamationmark"
+        case .notConnected: "link"
+        case .expiresSoon: "clock.badge.exclamationmark"
+        }
+    }
+
     private var title: String {
         switch issue {
         case .signInRequired: "Sign in again"
+        case .notConnected: "Connect"
         // Short enough to sit beside two buttons in half the menu's width; the tooltip
         // says the rest.
         case .expiresSoon(let date): "Ends \(date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))"

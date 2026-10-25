@@ -87,10 +87,11 @@ public struct MeterSettings {
         defaults.removeObject(forKey: key(for: account))
     }
 
-    /// On a new install, everything but Cursor, which is the only provider needing
-    /// software installed rather than a credential Meter can find or be given.
+    /// On a new install, everything but Cursor, which needs its desktop app, and Hive, which
+    /// needs a browser signed in to its portal: most people have neither, and a tile that can
+    /// only say "not connected" would be noise. Both are one click away under the tiles.
     public static func defaultEnabled(_ provider: ProviderID) -> Bool {
-        provider != .cursor
+        provider != .cursor && provider != .hive
     }
 
     // MARK: - Muted windows

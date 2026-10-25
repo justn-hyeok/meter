@@ -11,7 +11,8 @@ import Testing
     // Everything Meter can collect without extra software is on out of the box; Cursor
     // needs its desktop app, so it is the one provider the user opts into.
     #expect(!settings.enabled(.cursor))
-    for provider in ProviderID.allCases where provider != .cursor {
+    #expect(!settings.enabled(.hive))
+    for provider in ProviderID.allCases where provider != .cursor && provider != .hive {
         #expect(settings.enabled(provider))
     }
 
@@ -82,7 +83,7 @@ import Testing
     // Enabled providers come back in the arranged order, which is what the CLI prints.
     // Cursor is off by default and DeepSeek is switched off here.
     settings.setEnabled(false, for: .deepSeek)
-    #expect(settings.enabledProviders() == [.claude, .codex, .commandCode, .openCodeGo, .openRouter, .hive])
+    #expect(settings.enabledProviders() == [.claude, .codex, .commandCode, .openCodeGo, .openRouter])
 }
 
 @Test func savingTheOrderKeepsProvidersFromANewerBuild() throws {

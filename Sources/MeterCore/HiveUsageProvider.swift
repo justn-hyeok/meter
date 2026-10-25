@@ -32,9 +32,20 @@ struct HiveUsageProvider: UsageProvider {
         self.send = send
     }
 
+    static let notConnected = "Sign in at portal.thehive.ai in Chrome, Arc, Dia, Brave, Edge or Aside. Meter picks the session up from there."
+    static let sessionEnded = "The portal session ended. Sign in again at portal.thehive.ai in your browser."
+
     func fetch() async -> UsageSnapshot {
         do {
             return try await fetchBalance()
+        } catch let error as ChromiumCookies.KeyUnavailable {
+            return .unavailable(id, error.localizedDescription)
+        } catch CredentialError.signInRequired {
+            // Someone who has never had a session is setting it up; someone who had one
+            // has lost it. They need different words, and only the second is an alert.
+            return store.secret(for: .hive) == nil
+                ? .unavailable(id, Self.notConnected, issue: .notConnected)
+                : .unavailable(id, Self.sessionEnded, issue: .signInRequired)
         } catch {
             return .unavailable(id, "Hive unavailable", error: error)
         }
