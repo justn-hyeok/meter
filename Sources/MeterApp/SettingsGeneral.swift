@@ -37,7 +37,7 @@ struct GeneralSettingsTab: View {
                             TextField(AlertPercents.defaultText, text: $percentsDraft)
                                 .onSubmit { commitPercents() }
                         }
-                        Text("Notify once at each percent. Comma-separated.")
+                        Text("Default for every window. A provider or a window can override this. Comma-separated.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -174,5 +174,25 @@ struct GeneralSettingsTab: View {
         if flags.contains(.option) { modifiers |= optionKey }
         if flags.contains(.shift) { modifiers |= shiftKey }
         return modifiers
+    }
+}
+
+/// One comma-separated percents field. Empty means inherit; junk is not saved.
+struct AlertPercentsField: View {
+    let placeholder: String
+    let current: String
+    let onCommit: (String) -> Void
+    @State private var draft = ""
+
+    var body: some View {
+        TextField(placeholder, text: $draft)
+            .onAppear { draft = current }
+            .onChange(of: current) { _, newValue in draft = newValue }
+            .onSubmit { commit() }
+            .onDisappear { commit() }
+    }
+
+    private func commit() {
+        onCommit(draft)
     }
 }

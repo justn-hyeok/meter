@@ -455,7 +455,7 @@ struct ProviderTile: View {
             Button("Hide \(account.title)") { store.setEnabled(false, for: account) }
             // A window that sits full by design, such as a plan's bonus models, would be red
             // and alerting for good. Unchecking it keeps the figure and drops the warning.
-            let windows = snapshot?.buckets.filter { $0.fractionUsed != nil } ?? []
+            let windows = snapshot?.buckets.filter { $0.alertFraction != nil } ?? []
             if !windows.isEmpty {
                 Section("Warn when nearly used") {
                     ForEach(windows) { bucket in

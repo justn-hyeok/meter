@@ -5,6 +5,7 @@ import SwiftUI
 /// Providers on and off, keys, named accounts. (W2)
 struct ProvidersSettingsTab: View {
     @Bindable var store: UsageStore
+    @Bindable var alerts: AlertCenter
 
     var body: some View {
         Form {
@@ -15,11 +16,14 @@ struct ProvidersSettingsTab: View {
                         get: { store.enabled(Account(provider)) },
                         set: { store.setEnabled($0, for: Account(provider)) }
                     ))
+                    if alerts.isEnabled {
+                        AccountPercentsField(account: Account(provider), alerts: alerts)
+                    }
                     if provider.acceptsStoredKey {
                         StoredKeyControls(provider: provider, store: store)
                     }
                     if provider.acceptsNamedAccounts {
-                        NamedAccountControls(provider: provider, store: store)
+                        NamedAccountControls(provider: provider, store: store, alerts: alerts)
                     }
                     if let fix = provider.signInFix {
                         SignInLine(fix: fix)
@@ -128,6 +132,7 @@ private struct StoredKeyControls: View {
 private struct NamedAccountControls: View {
     let provider: ProviderID
     @Bindable var store: UsageStore
+    @Bindable var alerts: AlertCenter
     @State private var name = ""
     @State private var key = ""
     @State private var failure: String?
@@ -167,6 +172,9 @@ private struct NamedAccountControls: View {
                         get: { store.enabled(account) },
                         set: { store.setEnabled($0, for: account) }
                     ))
+                    if alerts.isEnabled {
+                        AccountPercentsField(account: account, alerts: alerts)
+                    }
                 }
             }
             DisclosureGroup("Add account", isExpanded: $isAdding) {
@@ -246,13 +254,50 @@ private struct SignInLine: View {
 /// Windows whose warnings are muted, to switch back on. (W2)
 struct WarningsSettingsTab: View {
     @Bindable var store: UsageStore
+    @Bindable var alerts: AlertCenter
 
     private var windows: [MutedWindow] {
         MutedWindow.all(store.muted, in: store.snapshots)
     }
 
+    private var alertable: [AlertableWindow] {
+        store.snapshots.values
+            .flatMap { snapshot in
+                snapshot.buckets.compactMap { bucket -> AlertableWindow? in
+                    guard bucket.alertFraction != nil else { return nil }
+                    return AlertableWindow(
+                        key: BucketKey(account: snapshot.accountID, bucketID: bucket.id),
+                        accountTitle: snapshot.accountID.title,
+                        label: bucket.label
+                    )
+                }
+            }
+            .sorted { ($0.accountTitle, $0.label, $0.key.bucketID) < ($1.accountTitle, $1.label, $1.key.bucketID) }
+    }
+
     var body: some View {
         Form {
+            if alerts.isEnabled {
+                Section("Percents") {
+                    Text("Empty inherits the provider list, then General. Dollar windows with a cap use the same steps.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if alertable.isEmpty {
+                        Text("No windows with a limit yet. Refresh, then set percents here.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(alertable) { window in
+                            LabeledContent("\(window.accountTitle) · \(window.label)") {
+                                AlertPercentsField(
+                                    placeholder: alerts.inheritedPercents(for: window.key),
+                                    current: alerts.percentsText(for: window.key)
+                                ) { alerts.setPercentsText($0, for: window.key) }
+                            }
+                        }
+                    }
+                }
+            }
             Section {
                 Text("Muted windows keep their figure but lose colour, alerts and their place in the menu bar gauge.")
                     .font(.caption)
@@ -280,5 +325,26 @@ struct WarningsSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct AlertableWindow: Identifiable {
+    let key: BucketKey
+    let accountTitle: String
+    let label: String
+    var id: BucketKey { key }
+}
+
+private struct AccountPercentsField: View {
+    let account: Account
+    @Bindable var alerts: AlertCenter
+
+    var body: some View {
+        LabeledContent("Percents") {
+            AlertPercentsField(
+                placeholder: alerts.inheritedPercents(for: account),
+                current: alerts.percentsText(for: account)
+            ) { alerts.setPercentsText($0, for: account) }
+        }
     }
 }

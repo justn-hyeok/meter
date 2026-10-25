@@ -172,6 +172,72 @@ public struct MeterSettings {
         AlertPercents.thresholds(from: alertPercentsText)
     }
 
+    private static let alertPercentsAccountsKey = "alerts.percents.accounts"
+    private static let alertPercentsWindowsKey = "alerts.percents.windows"
+
+    /// Provider-wide override, keyed by `account.rawValue`. Missing means the global list.
+    public var accountAlertPercents: [String: String] {
+        get { defaults.dictionary(forKey: Self.alertPercentsAccountsKey) as? [String: String] ?? [:] }
+        nonmutating set { defaults.set(newValue, forKey: Self.alertPercentsAccountsKey) }
+    }
+
+    /// One window's override, keyed by `BucketKey.rawValue`. Wins over the account list.
+    public var windowAlertPercents: [String: String] {
+        get { defaults.dictionary(forKey: Self.alertPercentsWindowsKey) as? [String: String] ?? [:] }
+        nonmutating set { defaults.set(newValue, forKey: Self.alertPercentsWindowsKey) }
+    }
+
+    public func alertPercentsText(for account: Account) -> String? {
+        accountAlertPercents[account.rawValue]
+    }
+
+    /// Empty text clears the override. Unreadable text is ignored.
+    public func setAlertPercentsText(_ text: String, for account: Account) {
+        accountAlertPercents = written(accountAlertPercents, key: account.rawValue, text: text)
+    }
+
+    public func alertPercentsText(for window: BucketKey) -> String? {
+        windowAlertPercents[window.rawValue]
+    }
+
+    public func setAlertPercentsText(_ text: String, for window: BucketKey) {
+        windowAlertPercents = written(windowAlertPercents, key: window.rawValue, text: text)
+    }
+
+    public func alertThresholds(for account: Account, bucketID: String) -> [Double] {
+        let window = BucketKey(account: account, bucketID: bucketID)
+        if let text = windowAlertPercents[window.rawValue] {
+            return AlertPercents.thresholds(from: text)
+        }
+        if let text = accountAlertPercents[account.rawValue] {
+            return AlertPercents.thresholds(from: text)
+        }
+        return alertThresholds
+    }
+
+    public var accountAlertThresholds: [String: [Double]] {
+        Dictionary(uniqueKeysWithValues: accountAlertPercents.compactMap { key, text in
+            AlertPercents.parse(text).map { (key, $0.map { Double($0) / 100 }) }
+        })
+    }
+
+    public var windowAlertThresholds: [String: [Double]] {
+        Dictionary(uniqueKeysWithValues: windowAlertPercents.compactMap { key, text in
+            AlertPercents.parse(text).map { (key, $0.map { Double($0) / 100 }) }
+        })
+    }
+
+    private func written(_ stored: [String: String], key: String, text: String) -> [String: String] {
+        var stored = stored
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            stored.removeValue(forKey: key)
+        } else if let values = AlertPercents.parse(trimmed) {
+            stored[key] = AlertPercents.display(values)
+        }
+        return stored
+    }
+
     private static let migrationKey = "settings.migration"
 
     /// Pins the choices of an install that predates the wider default.

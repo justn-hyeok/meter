@@ -59,9 +59,18 @@ public enum UsageAlerts {
         sent: Set<String>,
         muted: Set<BucketKey> = [],
         thresholds: [Double] = defaultThresholds,
+        byAccount: [String: [Double]] = [:],
+        byWindow: [String: [Double]] = [:],
         now: Date = .now
     ) -> (alerts: [UsageAlert], sent: Set<String>) {
-        let levels = (thresholds.isEmpty ? defaultThresholds : thresholds).sorted()
+        let fallback = (thresholds.isEmpty ? defaultThresholds : thresholds).sorted()
+        func levels(for account: Account, bucketID: String) -> [Double] {
+            let raw = byWindow[BucketKey(account: account, bucketID: bucketID).rawValue]
+                ?? byAccount[account.rawValue]
+                ?? fallback
+            let sorted = raw.sorted()
+            return sorted.isEmpty ? fallback : sorted
+        }
         var alerts: [UsageAlert] = []
         var kept: Set<String> = []
 
@@ -102,8 +111,9 @@ public enum UsageAlerts {
                 continue
             }
             for bucket in snapshot.buckets {
+                let levels = levels(for: account, bucketID: bucket.id)
                 guard !muted.contains(BucketKey(account: account, bucketID: bucket.id)),
-                      let fraction = bucket.fractionUsed,
+                      let fraction = bucket.alertFraction,
                       let crossed = levels.last(where: { fraction >= $0 }) else { continue }
                 func key(_ threshold: Double) -> String {
                     prefix + "limit|\(bucket.id)|\(Int((threshold * 100).rounded()))"
@@ -116,6 +126,9 @@ public enum UsageAlerts {
                 guard !sent.contains(key(crossed)) else { continue }
                 let percent = Int((crossed * 100).rounded())
                 var body = "\(Int((fraction * 100).rounded()))% used"
+                if bucket.unit == .usd {
+                    body = "\(UsageFormat.value(bucket)) · \(body)"
+                }
                 if let reset = bucket.resetAt {
                     body += " · resets \(relative(reset, now))"
                 }

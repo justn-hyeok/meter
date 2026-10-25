@@ -18,6 +18,7 @@ private func loadFixture(_ name: String) throws -> Data {
     let spend = UsageBucket(id: "spend", label: "Extra usage", used: 13.50, limit: 50, remaining: nil, resetAt: nil, unit: .usd)
     #expect(spend.percentageUsed == nil)
     #expect(spend.fractionUsed == nil)
+    #expect(spend.alertFraction == 13.50 / 50)
 
     // Countable units keep deriving one.
     let credits = UsageBucket(id: "monthly", label: "Monthly", used: 25, limit: 50, remaining: 25, resetAt: nil, unit: .credits)

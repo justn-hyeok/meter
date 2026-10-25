@@ -13,9 +13,9 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsTab(store: store, alerts: alerts, hotKeys: hotKeys)
                 .tabItem { Label("General", systemImage: "gearshape") }
-            ProvidersSettingsTab(store: store)
+            ProvidersSettingsTab(store: store, alerts: alerts)
                 .tabItem { Label("Providers", systemImage: "square.grid.2x2") }
-            WarningsSettingsTab(store: store)
+            WarningsSettingsTab(store: store, alerts: alerts)
                 .tabItem { Label("Warnings", systemImage: "bell.badge") }
         }
         .frame(width: 520)

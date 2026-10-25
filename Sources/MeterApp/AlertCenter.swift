@@ -22,6 +22,30 @@ final class AlertCenter: NSObject {
         set { settings.alertPercentsText = newValue }
     }
 
+    func percentsText(for account: Account) -> String {
+        settings.alertPercentsText(for: account) ?? ""
+    }
+
+    func setPercentsText(_ text: String, for account: Account) {
+        settings.setAlertPercentsText(text, for: account)
+    }
+
+    func percentsText(for window: BucketKey) -> String {
+        settings.alertPercentsText(for: window) ?? ""
+    }
+
+    func setPercentsText(_ text: String, for window: BucketKey) {
+        settings.setAlertPercentsText(text, for: window)
+    }
+
+    func inheritedPercents(for account: Account) -> String {
+        percentsText
+    }
+
+    func inheritedPercents(for window: BucketKey) -> String {
+        settings.alertPercentsText(for: window.account) ?? percentsText
+    }
+
     override init() {
         isEnabled = settings.alertsEnabled
         super.init()
@@ -35,7 +59,12 @@ final class AlertCenter: NSObject {
     /// so switching them back on does not deliver a backlog at once.
     func check(_ snapshots: [UsageSnapshot], muted: Set<BucketKey>) {
         let result = UsageAlerts.evaluate(
-            snapshots, sent: settings.alertsSent, muted: muted, thresholds: settings.alertThresholds
+            snapshots,
+            sent: settings.alertsSent,
+            muted: muted,
+            thresholds: settings.alertThresholds,
+            byAccount: settings.accountAlertThresholds,
+            byWindow: settings.windowAlertThresholds
         )
         settings.alertsSent = result.sent
         guard isEnabled, AppBundle.isBundled, !result.alerts.isEmpty else { return }

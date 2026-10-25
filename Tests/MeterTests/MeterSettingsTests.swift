@@ -137,3 +137,34 @@ import Testing
     settings.alertPercentsText = "nope"
     #expect(MeterSettings(defaults: defaults).alertPercentsText == "80, 100")
 }
+
+@Test func alertPercentsOverridesPreferWindowThenAccount() throws {
+    let suiteName = "MeterTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let settings = MeterSettings(defaults: defaults)
+    let claude = Account(.claude)
+    let window = BucketKey(provider: .claude, bucketID: "week")
+
+    settings.alertPercentsText = "80, 95"
+    settings.setAlertPercentsText("50", for: claude)
+    #expect(settings.alertPercentsText(for: claude) == "50")
+    #expect(settings.alertThresholds(for: claude, bucketID: "week") == [0.5])
+
+    settings.setAlertPercentsText("100", for: window)
+    #expect(settings.alertPercentsText(for: window) == "100")
+    #expect(settings.alertThresholds(for: claude, bucketID: "week") == [1.0])
+    #expect(settings.alertThresholds(for: Account(.cursor), bucketID: "week") == [0.8, 0.95])
+
+    settings.setAlertPercentsText("junk", for: claude)
+    #expect(settings.alertPercentsText(for: claude) == "50")
+
+    settings.setAlertPercentsText("  ", for: window)
+    #expect(settings.alertPercentsText(for: window) == nil)
+    #expect(settings.alertThresholds(for: claude, bucketID: "week") == [0.5])
+
+    settings.setAlertPercentsText("", for: claude)
+    #expect(settings.alertPercentsText(for: claude) == nil)
+    #expect(settings.alertThresholds(for: claude, bucketID: "week") == [0.8, 0.95])
+}

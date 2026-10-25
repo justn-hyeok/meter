@@ -131,6 +131,14 @@ public struct UsageBucket: Identifiable, Codable, Sendable, Equatable {
     public var fractionUsed: Double? {
         percentageUsed.map { $0 / 100 }
     }
+
+    /// How full the window is for alerts. Dollars with a real cap count here, without
+    /// becoming a menu-bar percentage: that ratio has been the wrong number before.
+    public var alertFraction: Double? {
+        if let fraction = fractionUsed { return fraction }
+        guard unit == .usd, let used, let limit, limit > 0 else { return nil }
+        return min(max(used / limit, 0), 1)
+    }
 }
 
 public enum SnapshotState: String, Codable, Sendable {

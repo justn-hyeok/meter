@@ -77,6 +77,53 @@ private func evaluate(_ snapshots: [UsageSnapshot], sent: Set<String>, threshold
     #expect(AlertPercents.parse("0, 101") == nil)
 }
 
+private func money(_ used: Double, limit: Double?, remaining: Double? = nil) -> UsageSnapshot {
+    UsageSnapshot(
+        provider: .openRouter,
+        buckets: [.init(id: "limit", label: "Key limit", used: used, limit: limit,
+                        remaining: remaining, resetAt: nil, unit: .usd)],
+        fetchedAt: now, source: "test", state: .live, message: nil
+    )
+}
+
+@Test func aDollarCapAlertsOnTheSameSteps() {
+    let result = UsageAlerts.evaluate(
+        [money(8.2, limit: 10, remaining: 1.8)], sent: [], thresholds: classic, now: now
+    )
+    #expect(result.alerts.map(\.title) == ["OpenRouter: Key limit 80%"])
+    #expect(result.alerts.first?.body.hasPrefix("$1.80 left · 82% used") == true)
+}
+
+@Test func aDollarWindowWithoutACapDoesNotAlert() {
+    let result = UsageAlerts.evaluate([money(42, limit: nil)], sent: [], thresholds: classic, now: now)
+    #expect(result.alerts.isEmpty)
+}
+
+@Test func windowPercentsBeatAccountPercentsBeatGlobal() {
+    let snap = snapshot(.claude, 82)
+    let window = BucketKey(provider: .claude, bucketID: "week").rawValue
+    // Global would fire at 80%. The account list waits until 90%.
+    let accountOnly = UsageAlerts.evaluate(
+        [snap], sent: [], thresholds: classic, byAccount: ["claude": [0.9]], now: now
+    )
+    #expect(accountOnly.alerts.isEmpty)
+    // The window list waits until 100%, so neither the account nor the global step fires.
+    let windowOnly = UsageAlerts.evaluate(
+        [snap], sent: [], thresholds: classic,
+        byAccount: ["claude": [0.5]],
+        byWindow: [window: [1.0]],
+        now: now
+    )
+    #expect(windowOnly.alerts.isEmpty)
+    let atCap = UsageAlerts.evaluate(
+        [snapshot(.claude, 100)], sent: [], thresholds: classic,
+        byAccount: ["claude": [0.5]],
+        byWindow: [window: [1.0]],
+        now: now
+    )
+    #expect(atCap.alerts.map(\.title) == ["Claude: Weekly 100%"])
+}
+
 @Test func staleFiguresNeitherAlertNorForget() {
     let first = UsageAlerts.evaluate([snapshot(.claude, 85)], sent: [], now: now)
     let stale = UsageAlerts.evaluate([snapshot(.claude, 85, state: .stale)], sent: first.sent, now: now)

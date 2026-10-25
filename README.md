@@ -24,7 +24,7 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - Automatic refresh every five minutes and manual refresh from the menu
 - Last-good data preserved when a refresh temporarily fails
 - A monochrome menu bar gauge drawn like the tiles' arcs, filled to the highest usage
-- macOS notifications when a window passes a percent you set (default 25, 50, 75, 80, 85, 90, 95, 97, 99, 100), once at each step, and when a sign-in stops working or is about to end; tiles show the fix (copy the sign-in command, open the page)
+- macOS notifications when a window passes a percent you set (default 25, 50, 75, 80, 85, 90, 95, 97, 99, 100), once at each step, including dollar APIs that report a cap; General, a provider, or a single window can each have its own list; tiles show the fix (copy the sign-in command, open the page)
 - A standalone `meter` command for interactive use and automation
 - Token usage per model and provider, read from the logs Claude Code, Codex and OpenCode keep on this Mac, in the menu's **Tokens** view and with `meter tokens` / `meter models`
 - Hive's credit balance, read from the portal session of a browser signed in to portal.thehive.ai (Chrome, Arc, Dia, Brave, Edge or Aside) and kept alive by Meter's own refreshes. Off until added with **+ Hive**; the first read asks once for the browser's "Safe Storage" keychain item
@@ -47,7 +47,7 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 ## Install
 
-Download `Meter-0.6.4-macos-universal-app.zip` from the [v0.6.4 release](https://github.com/justn-hyeok/meter/releases/tag/v0.6.4), extract it, and move `Meter.app` to `/Applications`. The archive includes the [MIT License](LICENSE) notice.
+Download `Meter-0.6.6-macos-universal-app.zip` from the [v0.6.6 release](https://github.com/justn-hyeok/meter/releases/tag/v0.6.6), extract it, and move `Meter.app` to `/Applications`. The archive includes the [MIT License](LICENSE) notice.
 
 **Required after downloading:** the release is not notarized, so macOS refuses to launch it until you clear the quarantine flag the browser attached. Run this once after moving the app:
 
@@ -259,7 +259,7 @@ See the [tmux manual](https://man.openbsd.org/tmux), [Starship custom modules](h
 
 The default exit status is 0 when at least one provider has a usable observation. Use `--strict` to exit 1 for stale observations or unavailable providers. The command exits 2 when none has data and 64 for invalid arguments. JSON output wraps `snapshots` in `schemaVersion: 4` and follows menu order or the order of arguments supplied. Named accounts have an `account` field; default accounts do not. Automation should identify entries by `provider` and `account`, not array position.
 
-The v0.6.4 release also includes `meter-0.6.4-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
+The v0.6.6 release also includes `meter-0.6.6-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh
