@@ -10,15 +10,23 @@ public struct ClaudeCodeLogSource: TokenLogSource {
     public let tool = UsageTool.claudeCode
 
     private let projectsDirectories: [URL]
+    let cache: TokenFileCache
 
     public init(projectsDirectories: [URL]) {
+        self.init(projectsDirectories: projectsDirectories, cache: TokenFileCache(directory: nil))
+    }
+
+    init(projectsDirectories: [URL], cache: TokenFileCache) {
         self.projectsDirectories = projectsDirectories
+        self.cache = cache
     }
 
     /// Takes the environment and home directory separately so a test can point both at a
     /// temporary tree instead of this Mac's real logs.
-    init(environment: [String: String], homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) {
+    init(environment: [String: String], homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+         cache: TokenFileCache = TokenFileCache(directory: nil)) {
         self.projectsDirectories = Self.projectsDirectories(environment: environment, homeDirectory: homeDirectory)
+        self.cache = cache
     }
 
     /// The projects directories of every Claude Code install this Mac has: the ones
@@ -26,7 +34,8 @@ public struct ClaudeCodeLogSource: TokenLogSource {
     public static var `default`: ClaudeCodeLogSource {
         ClaudeCodeLogSource(
             environment: ProcessInfo.processInfo.environment,
-            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+            cache: .standard("claude-code")
         )
     }
 
@@ -70,12 +79,8 @@ public struct ClaudeCodeLogSource: TokenLogSource {
                    modified < since {
                     continue
                 }
-                guard let data = try? Data(contentsOf: file) else { continue }
-                for line in data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
-                    guard line.range(of: Self.usageKey) != nil,
-                          let entry = try? decoder.decode(LogLine.self, from: line),
-                          let record = entry.record(),
-                          record.timestamp >= cutoff else { continue }
+                for record in cache.records(in: file, parse: { Self.parse($0, decoder: decoder) })
+                where record.timestamp >= cutoff {
                     if let earlier = index[record.id] {
                         if record.tokens.output > records[earlier].tokens.output { records[earlier] = record }
                     } else {
@@ -86,6 +91,13 @@ public struct ClaudeCodeLogSource: TokenLogSource {
             }
         }
         return records
+    }
+
+    private static func parse(_ data: Data, decoder: JSONDecoder) -> [TokenRecord] {
+        data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true).compactMap { line in
+            guard line.range(of: usageKey) != nil else { return nil }
+            return (try? decoder.decode(LogLine.self, from: line))?.record()
+        }
     }
 
     /// Checked before decoding, which is most of the cost: a session log is mostly prompts,
