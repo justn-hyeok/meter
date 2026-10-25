@@ -106,19 +106,22 @@ public enum MenuWidth: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// How tall the menu may grow before it scrolls, as a share of the screen's height.
+/// How tall the menu is at least. Every choice grows with its tiles up to the same limit,
+/// the screen less its header and footer, and scrolls past it; they differ in how short
+/// the menu may be when there are few tiles.
 public enum MenuHeight: String, Codable, CaseIterable, Sendable {
-    /// As tall as the tiles, up to about 60% of the screen.
+    /// As tall as the tiles, however few: how the menu has always been.
     case standard
-    /// As tall as the tiles, up to about 85% of the screen.
+    /// At least about 60% of the screen, so a few tiles do not leave a short menu.
     case tall
-    /// Always the full height of the screen, however few tiles there are.
+    /// Always the full height the menu may have, however few tiles there are.
     case fill
 
-    public var screenShare: Double {
+    /// The share of the screen's height the whole menu is at least.
+    public var minimumShare: Double {
         switch self {
-        case .standard: 0.6
-        case .tall: 0.85
+        case .standard: 0
+        case .tall: 0.6
         case .fill: 1
         }
     }
@@ -129,5 +132,91 @@ public enum MenuHeight: String, Codable, CaseIterable, Sendable {
         case .tall: "Tall"
         case .fill: "Fill the screen"
         }
+    }
+}
+
+/// The menu's grid in points: cells of 84 × 80 with 8 between them, inside 10 of padding.
+///
+/// One place for the numbers the menu's frame, each tile's frame and the clamp to the screen
+/// all have to agree about. The standard width's four columns come out at 380 pt, which is
+/// the width the menu had before it could be made wider.
+///
+/// The screen is passed in as plain numbers: the app reads it, this file only does arithmetic.
+public enum MenuGeometry {
+    public static let cellWidth: CGFloat = 84
+    public static let cellHeight: CGFloat = 80
+    public static let gap: CGFloat = 8
+    /// Between the tiles and the menu's edges.
+    public static let inset: CGFloat = 10
+    /// Kept free either side of the menu, so it never touches the screen's edge.
+    public static let margin: CGFloat = 20
+    /// The header and footer, which the tiles never use.
+    public static let chrome: CGFloat = 160
+    /// A menu is never shorter than this: below it a single tile is barely visible, and
+    /// scrolling the tiles is better than cutting them.
+    public static let minHeight: CGFloat = 240
+
+    /// The menu's width at `columns` cells.
+    public static func width(columns: Int) -> CGFloat {
+        CGFloat(columns) * cellWidth + CGFloat(max(columns - 1, 0)) * gap + inset * 2
+    }
+
+    /// The menu's width as it is drawn: the chosen one, cut back to the widest this screen
+    /// holds when that is narrower. A width chosen on a larger screen must not hang the
+    /// menu off this one.
+    public static func width(_ choice: MenuWidth, screenWidth: CGFloat) -> CGFloat {
+        width(columns: columns(choice, screenWidth: screenWidth))
+    }
+
+    /// The height the tiles need at `rows` rows, which is what a menu that does not scroll is.
+    public static func height(rows: Int) -> CGFloat {
+        CGFloat(max(rows, 0)) * cellHeight + CGFloat(max(rows - 1, 0)) * gap
+    }
+
+    /// A tile's frame from its placement: whole cells, plus the gaps it spans.
+    public static func size(_ placement: TilePlacement) -> CGSize {
+        CGSize(
+            width: CGFloat(placement.columns) * cellWidth + CGFloat(max(placement.columns - 1, 0)) * gap,
+            height: CGFloat(placement.rows) * cellHeight + CGFloat(max(placement.rows - 1, 0)) * gap
+        )
+    }
+
+    /// A tile's corner in the grid, measured from the grid's own top left.
+    public static func origin(_ placement: TilePlacement) -> CGPoint {
+        CGPoint(
+            x: CGFloat(placement.column) * (cellWidth + gap),
+            y: CGFloat(placement.row) * (cellHeight + gap)
+        )
+    }
+
+    /// Whether a menu this wide fits on a screen `screenWidth` wide.
+    public static func fits(_ choice: MenuWidth, screenWidth: CGFloat) -> Bool {
+        width(columns: choice.columns) <= screenWidth - margin * 2
+    }
+
+    /// The columns the menu actually draws. A screen narrower than the standard menu has no
+    /// narrower choice to fall back on, so standard stays and the window system places it.
+    public static func columns(_ choice: MenuWidth, screenWidth: CGFloat) -> Int {
+        let fitting = MenuWidth.allCases.last { fits($0, screenWidth: screenWidth) } ?? .standard
+        return min(choice.columns, fitting.columns)
+    }
+
+    /// How tall the tiles may get before they scroll: the screen less the header and footer.
+    /// The same for every height choice; they differ only in how short the menu may be.
+    public static func maxHeight(screenHeight: CGFloat) -> CGFloat {
+        max(minHeight, screenHeight - chrome)
+    }
+
+    /// How short the tile area may be: nothing for the standard height, and for the others
+    /// the chosen share of the screen once the header and footer are taken out of it, never
+    /// more than the most the menu may have.
+    public static func minimumHeight(_ choice: MenuHeight, screenHeight: CGFloat) -> CGFloat {
+        let wanted = screenHeight * choice.minimumShare - chrome
+        return min(max(0, wanted), maxHeight(screenHeight: screenHeight))
+    }
+
+    /// The tile area's height for tiles that need `contentHeight`.
+    public static func cardsHeight(_ choice: MenuHeight, contentHeight: CGFloat, screenHeight: CGFloat) -> CGFloat {
+        min(max(contentHeight, minimumHeight(choice, screenHeight: screenHeight)), maxHeight(screenHeight: screenHeight))
     }
 }

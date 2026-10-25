@@ -24,6 +24,31 @@ struct GeneralSettingsTab: View {
                 }
             }
 
+            Section("Menu") {
+                Picker("Width", selection: $store.menuWidth) {
+                    ForEach(MenuWidth.allCases, id: \.self) { width in
+                        Text(width.title)
+                            .tag(width)
+                            // A width the screen cannot hold would hang the menu off its edge.
+                            // It stays listed, so it is clear the menu can be made wider on a
+                            // larger screen.
+                            .disabled(!MenuGeometry.fits(width, screenWidth: screenWidth))
+                    }
+                }
+                if let tooWideNote {
+                    Text(tooWideNote).font(.caption).foregroundStyle(.secondary)
+                }
+                Picker("Height", selection: $store.menuHeight) {
+                    ForEach(MenuHeight.allCases, id: \.self) { height in
+                        Text(height.title).tag(height)
+                    }
+                }
+                Toggle("Fill gaps between tiles", isOn: $store.fillGaps)
+                Text("A later tile moves up into a hole a bigger one left. Off keeps your order exactly.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 if LoginItem.isAvailable {
                     Toggle("Launch at login", isOn: loginItemBinding)
@@ -76,6 +101,17 @@ struct GeneralSettingsTab: View {
     private func intervalText(_ interval: TimeInterval) -> String {
         let minutes = Int(interval / 60)
         return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+    }
+
+    /// The screen the menu opens on. Without one, nothing is ruled out: the menu's own clamp
+    /// still keeps it on screen.
+    private var screenWidth: CGFloat { NSScreen.main?.visibleFrame.width ?? .infinity }
+
+    /// Shown only when a width really is out of reach, so the tab says nothing about screens
+    /// that hold every choice.
+    private var tooWideNote: String? {
+        let unreachable = MenuWidth.allCases.contains { !MenuGeometry.fits($0, screenWidth: screenWidth) }
+        return unreachable ? "Wider menus are off because they would not fit on this screen." : nil
     }
 
     private var loginItemBinding: Binding<Bool> {

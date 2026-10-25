@@ -59,10 +59,10 @@ private struct MeterMenu: View {
     var body: some View {
         VStack(spacing: 0) {
             MenuHeader(store: store, tokens: tokens, tab: $tab)
-            // Every tile is one fixed size, so the menu's height follows only from how many
-            // providers are on: it no longer grows and shrinks as they answer or fail, and it
-            // has no empty band of window below the last tile. It scrolls only when the tiles
-            // outgrow the screen.
+            // Tiles keep the size they are given, so the menu's height follows from how they
+            // packed and not from what the providers answered: a tile that fails keeps its
+            // place, and there is no empty band of window below the last tile. It scrolls
+            // only when the tiles outgrow the screen.
             // The token view takes the height the tiles set, so switching tabs never resizes
             // the menu under the pointer; it scrolls inside that height instead.
             ZStack(alignment: .top) {
@@ -88,11 +88,11 @@ private struct MeterMenu: View {
                         .task { await tokens.load() }
                 }
             }
-            .frame(height: min(cardsHeight, maxCardsHeight))
+            .frame(height: cardsFrameHeight)
             Divider()
             MenuFooter(store: store, alerts: alerts, hotKeys: hotKeys)
         }
-        .frame(width: 380)
+        .frame(width: MenuGeometry.width(store.menuWidth, screenWidth: screenWidth))
         .fixedSize(horizontal: false, vertical: true)
         .overlay(alignment: .topLeading) { liftedTile }
         .coordinateSpace(.named(CardDrag.space))
@@ -107,10 +107,22 @@ private struct MeterMenu: View {
 }
 
 extension MeterMenu {
-    /// What is left of the screen once the header and footer are placed.
-    private var maxCardsHeight: CGFloat {
-        max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 160)
+    /// What is left of the screen once the header and footer are placed, as the share of the
+    /// screen the chosen height asks for. The share is what keeps a menu with every tile on
+    /// it from running past the bottom of the screen.
+    private var screenHeight: CGFloat { NSScreen.main?.visibleFrame.height ?? 800 }
+
+    /// `.fill` holds the menu at that maximum even when the tiles are shorter, so it opens the
+    /// same size however few of them there are; the other modes hug the tiles until they
+    /// outgrow the screen. The Tokens tab shares the height the tiles set, so switching tabs
+    /// never resizes the menu under the pointer.
+    private var cardsFrameHeight: CGFloat {
+        MenuGeometry.cardsHeight(store.menuHeight, contentHeight: cardsHeight, screenHeight: screenHeight)
     }
+
+    /// The screen the menu opens on, for the width clamp. Without one there is nothing to
+    /// clamp against.
+    private var screenWidth: CGFloat { NSScreen.main?.visibleFrame.width ?? .infinity }
 
     /// The tile being carried, drawn at full size under the pointer with a shadow to show
     /// it is off the grid.
@@ -241,31 +253,68 @@ private struct MenuFooter: View {
 
 // MARK: - Grid
 
-/// Enabled providers as tiles of one size, two to a row. An odd one out keeps its size
-/// rather than stretching across the row.
+/// Enabled providers as tiles of mixed sizes, placed by `TileLayout.pack`: the same packer
+/// the CLI and the drag's drop targets read, so what is drawn is what those see.
 struct TileGrid: View {
     @Bindable var store: UsageStore
     let drag: CardDrag
     let animation: Animation?
     let moveByKeyboard: (Account, Int) -> Void
 
+    /// The same clamp `MeterMenu` sizes its frame with, so the tiles never outgrow the menu.
+    private var screenWidth: CGFloat { NSScreen.main?.visibleFrame.width ?? .infinity }
+
     var body: some View {
         let visible = store.order.filter(store.enabled)
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+        let columns = MenuGeometry.columns(store.menuWidth, screenWidth: screenWidth)
+        let packed = TileLayout.pack(
+            visible.map { (id: $0, size: store.tileSize($0)) },
+            columns: columns,
+            fillGaps: store.fillGaps
+        )
+        TileGridLayout(placements: visible.map { packed.placements[$0]! }, columns: columns, rows: packed.rows) {
             ForEach(visible) { account in
+                let frame = MenuGeometry.size(packed.placements[account]!)
                 ProviderTile(account: account, store: store, drag: drag, animation: animation)
+                    // The grid owns the tile's footprint: the tile draws into whatever frame
+                    // it is handed, so one view fills a 2×1 or a 1×2 place as well as a 2×2.
+                    .frame(width: frame.width, height: frame.height)
                     // The carried tile leaves an empty place behind: the tile itself is
                     // what moves under the pointer, and a faded copy made it look like two.
                     .opacity(drag.account == account ? 0 : 1)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(CardDrag.space)) } action: {
                         drag.frames[account] = $0
                     }
-                    // A tile scrolled out of the lazy grid, or on a tab not shown, has no
-                    // place on screen; a frame left behind would catch the pointer.
+                    // A tile on a tab not shown has no place on screen; a frame left behind
+                    // would catch the pointer.
                     .onDisappear { drag.frames[account] = nil }
                     .accessibilityAction(named: "Move up") { moveByKeyboard(account, -1) }
                     .accessibilityAction(named: "Move down") { moveByKeyboard(account, 1) }
             }
+        }
+    }
+}
+
+/// Places every tile at the cells `TileLayout.pack` gave it. A tile of two cells is exactly
+/// as wide as two one-cell tiles and the gap between them, so a row of mixed sizes still
+/// lines up on the columns.
+private struct TileGridLayout: Layout {
+    /// One per subview, in the order the grid adds them.
+    let placements: [TilePlacement]
+    let columns: Int
+    let rows: Int
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        CGSize(width: MenuGeometry.width(columns: columns), height: MenuGeometry.height(rows: rows))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, placement) in zip(subviews, placements) {
+            let origin = MenuGeometry.origin(placement)
+            subview.place(
+                at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                proposal: ProposedViewSize(MenuGeometry.size(placement))
+            )
         }
     }
 }
