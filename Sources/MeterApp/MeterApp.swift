@@ -305,7 +305,10 @@ private struct TileGridLayout: Layout {
     let rows: Int
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        CGSize(width: MenuGeometry.width(columns: columns), height: MenuGeometry.height(rows: rows))
+        // The tiles' width, not the menu's: the menu adds the inset around the grid, and a
+        // grid that counted it too came out 20 pt wider than the menu, which centred it and
+        // pushed the tiles against the left edge.
+        CGSize(width: MenuGeometry.gridWidth(columns: columns), height: MenuGeometry.height(rows: rows))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {

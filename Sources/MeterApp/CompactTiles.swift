@@ -185,7 +185,7 @@ struct CompactTileContent: View {
                     .opacity(dimmed ? 0.55 : 1)
             }
             VStack(alignment: .leading, spacing: 1) {
-                name(fontSize: 12, truncation: .tail)
+                name(fontSize: 12)
                 if let headline {
                     VStack(alignment: .leading, spacing: 1) {
                         // Money has no dial and no reset, so its one line of two is the
@@ -202,7 +202,7 @@ struct CompactTileContent: View {
 
     private var narrow: some View {
         VStack(spacing: 3) {
-            name(fontSize: 11, truncation: .middle)
+            name(fontSize: 11, lines: 2)
             if let headline {
                 VStack(spacing: 3) {
                     if hasDial { dial(headline, size: 54) }
@@ -220,11 +220,14 @@ struct CompactTileContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private func name(fontSize: CGFloat, truncation: Text.TruncationMode) -> some View {
+    /// `lines` is reserved, so the dials of tiles side by side start at the same height
+    /// whether their titles took one line or two. The cut is at the tail: a title cut in the
+    /// middle ("Cod…: warn") lost the provider's name, which is the part that identifies it.
+    private func name(fontSize: CGFloat, lines: Int = 1) -> some View {
         Text(account.title)
             .font(.system(size: fontSize, weight: .semibold))
-            .lineLimit(1)
-            .truncationMode(truncation)
+            .lineLimit(lines, reservesSpace: true)
+            .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 

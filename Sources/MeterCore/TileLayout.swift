@@ -156,9 +156,14 @@ public enum MenuGeometry {
     /// scrolling the tiles is better than cutting them.
     public static let minHeight: CGFloat = 240
 
+    /// The tiles' own width at `columns` cells, before the menu's inset is added.
+    public static func gridWidth(columns: Int) -> CGFloat {
+        CGFloat(columns) * cellWidth + CGFloat(max(columns - 1, 0)) * gap
+    }
+
     /// The menu's width at `columns` cells.
     public static func width(columns: Int) -> CGFloat {
-        CGFloat(columns) * cellWidth + CGFloat(max(columns - 1, 0)) * gap + inset * 2
+        gridWidth(columns: columns) + inset * 2
     }
 
     /// The menu's width as it is drawn: the chosen one, cut back to the widest this screen

@@ -59,7 +59,10 @@ struct GeneralSettingsTab: View {
                         .help("Notify at the percents below, once each, or when a sign-in stops working")
                     if alerts.isEnabled {
                         LabeledContent("Percents") {
-                            TextField(AlertPercents.defaultText, text: $percentsDraft)
+                            // The title of a field in a form is drawn as its label, which here repeated the
+                            // values beside them; the default is the placeholder, not a second label.
+                            TextField("Percents", text: $percentsDraft, prompt: Text(AlertPercents.defaultText))
+                                .labelsHidden()
                                 .onSubmit { commitPercents() }
                         }
                         Text("Default for every window. A provider or a window can override this. Comma-separated.")
@@ -221,7 +224,8 @@ struct AlertPercentsField: View {
     @State private var draft = ""
 
     var body: some View {
-        TextField(placeholder, text: $draft)
+        TextField("Percents", text: $draft, prompt: Text(placeholder))
+            .labelsHidden()
             .onAppear { draft = current }
             .onChange(of: current) { _, newValue in draft = newValue }
             .onSubmit { commit() }

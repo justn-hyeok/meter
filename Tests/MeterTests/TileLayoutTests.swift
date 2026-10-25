@@ -45,6 +45,11 @@ private func place(_ sizes: [TileSize], columns: Int = 4, fillGaps: Bool) -> ([T
 /// and the menu itself the 380 it has always been.
 @Test func theStandardWidthKeepsTheMenuAndItsTilesTheirOldSize() {
     #expect(MenuGeometry.width(columns: MenuWidth.standard.columns) == 380)
+    // The grid sits inside the menu's inset on both sides, so the two add up to the menu.
+    for width in MenuWidth.allCases {
+        #expect(MenuGeometry.gridWidth(columns: width.columns) + MenuGeometry.inset * 2 == MenuGeometry.width(columns: width.columns))
+    }
+    #expect(MenuGeometry.gridWidth(columns: MenuWidth.standard.columns) == 360)
     #expect(MenuGeometry.width(.standard, screenWidth: 1_440) == 380)
     #expect(MenuWidth.allCases.map { MenuGeometry.width(columns: $0.columns) } == [380, 564, 748, 932])
     #expect(MenuGeometry.size(TilePlacement(column: 0, row: 0, columns: 2, rows: 2)) == CGSize(width: 176, height: 168))
