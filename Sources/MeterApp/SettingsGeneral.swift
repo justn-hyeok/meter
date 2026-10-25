@@ -55,7 +55,7 @@ struct GeneralSettingsTab: View {
                             .disabled(!hotKeys.current.isEnabled)
                         Button("Reset to ⌃⌥M") {
                             stopRecording()
-                            hotKeys.apply(.standard)
+                            if !hotKeys.apply(.standard) { hint = Self.taken }
                         }
                         .disabled(hotKeys.current == .standard)
                     }
@@ -96,9 +96,10 @@ struct GeneralSettingsTab: View {
         Binding(
             get: { hotKeys.current.isEnabled },
             set: { isEnabled in
+                stopRecording()
                 var setting = hotKeys.current
                 setting.isEnabled = isEnabled
-                hotKeys.apply(setting)
+                if !hotKeys.apply(setting) { hint = Self.taken }
             }
         )
     }
@@ -107,6 +108,7 @@ struct GeneralSettingsTab: View {
         guard monitor == nil else { return }
         isRecording = true
         hint = nil
+        hotKeys.suspend()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Local monitors run on the main thread; the state they change lives there too.
             MainActor.assumeIsolated { record(event) }
@@ -118,6 +120,7 @@ struct GeneralSettingsTab: View {
     private func stopRecording() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        if isRecording { hotKeys.resume() }
         isRecording = false
         hint = nil
     }
@@ -134,13 +137,16 @@ struct GeneralSettingsTab: View {
             return
         }
         let keyCode = Int(event.keyCode)
-        hotKeys.apply(HotKeySetting(
+        stopRecording()
+        let applied = hotKeys.apply(HotKeySetting(
             keyCode: keyCode,
             modifiers: modifiers,
             display: HotKeyDisplay.string(keyCode: keyCode, modifiers: modifiers)
         ))
-        stopRecording()
+        if !applied { hint = Self.taken }
     }
+
+    private static let taken = "That shortcut is taken by another app or by macOS. Try another."
 
     private static func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> Int {
         var modifiers = 0

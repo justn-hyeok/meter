@@ -88,7 +88,9 @@ public final class UsageStore {
         didSet {
             guard refreshInterval != oldValue else { return }
             settings.refreshInterval = refreshInterval
-            if refreshTask != nil { start() }
+            // The loop reads the interval each time it sleeps, so mid-refresh nothing needs
+            // restarting; cancelling then would cancel the requests and mark every tile stale.
+            if refreshTask != nil, !isRefreshing { start() }
         }
     }
     /// Called after every refresh lands, for work that follows the figures, such as alerts.
@@ -320,11 +322,13 @@ public final class UsageStore {
     /// the machine has, or asks again.
     public func clearKey(for provider: ProviderID) throws {
         try secrets.setSecret(nil, for: provider)
-        try cache?.invalidate(Account(provider))
+        // The key is gone whatever happens next, so the screen says so first.
         snapshots[Account(provider)] = nil
         snapshotFetchStartedAt[Account(provider)] = nil
         storedKeyProviders = Self.providersWithStoredKeys(secrets)
         credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
+        try? cache?.invalidate(Account(provider))
+        Task { await refresh(Account(provider), interactive: true) }
     }
 
     /// Adds a named account with its key, switched on, the way `meter set-key --name` does.
@@ -335,7 +339,9 @@ public final class UsageStore {
         guard Account.isValid(name: name) else { throw AccountError.invalidName(name) }
         guard !key.isEmpty else { throw AccountError.emptyKey }
         let account = Account(provider, name: name)
-        let named = accounts.filter { $0.provider == provider && $0.name != nil }
+        // From the key file, not the list loaded earlier: `meter set-key --name` may have
+        // added one since, and checking a stale list overwrote its key without a word.
+        let named = secrets.namedAccounts().filter { $0.provider == provider }
         guard !named.contains(account) else { throw AccountError.exists(account) }
         guard named.count < Account.limitPerProvider - 1 else { throw AccountError.full(provider) }
         try secrets.setSecret(key, for: account)

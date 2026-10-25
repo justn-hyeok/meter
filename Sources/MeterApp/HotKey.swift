@@ -14,7 +14,8 @@ final class GlobalHotKey {
     private var handler: EventHandlerRef?
     private let action: @MainActor () -> Void
 
-    init(keyCode: Int, modifiers: Int, action: @escaping @MainActor () -> Void) {
+    /// Nil when macOS refuses the combination, usually because another app holds it.
+    init?(keyCode: Int, modifiers: Int, action: @escaping @MainActor () -> Void) {
         self.action = action
 
         var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
@@ -28,7 +29,11 @@ final class GlobalHotKey {
         }, 1, &pressed, context, &handler)
 
         let identifier = EventHotKeyID(signature: OSType(0x4D54_5252), id: 1) // "MTRR"
-        RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), identifier, GetApplicationEventTarget(), 0, &hotKey)
+        let status = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), identifier, GetApplicationEventTarget(), 0, &hotKey)
+        guard status == noErr, hotKey != nil else {
+            unregister()
+            return nil
+        }
     }
 
     /// Stops the shortcut and drops its handler, so replacing it does not leave the old
@@ -72,15 +77,41 @@ final class HotKeyController {
     var display: String? { current.isEnabled ? current.display : nil }
 
     /// Saves `setting` and registers it in place of the previous one. Nil restores the
-    /// default; a switched-off setting registers nothing.
-    func apply(_ setting: HotKeySetting?) {
-        self.setting = setting
-        settings.hotKey = setting
+    /// default; a switched-off setting registers nothing. Returns false, keeping the previous
+    /// shortcut, when macOS will not register the new one: saving it anyway showed a
+    /// shortcut as set that did nothing.
+    @discardableResult
+    func apply(_ setting: HotKeySetting?) -> Bool {
         hotKey?.unregister()
         hotKey = nil
         let resolved = setting ?? .standard
-        guard resolved.isEnabled else { return }
-        hotKey = GlobalHotKey(keyCode: resolved.keyCode, modifiers: resolved.modifiers, action: action)
+        if resolved.isEnabled {
+            guard let registered = GlobalHotKey(keyCode: resolved.keyCode, modifiers: resolved.modifiers, action: action) else {
+                register(current)
+                return false
+            }
+            hotKey = registered
+        }
+        self.setting = setting
+        settings.hotKey = setting
+        return true
+    }
+
+    /// Lets the recorder see the shortcut in force: while it is registered, macOS hands
+    /// that key press to the hot key and the recorder never gets it.
+    func suspend() {
+        hotKey?.unregister()
+        hotKey = nil
+    }
+
+    func resume() {
+        guard hotKey == nil else { return }
+        register(current)
+    }
+
+    private func register(_ setting: HotKeySetting) {
+        guard setting.isEnabled else { return }
+        hotKey = GlobalHotKey(keyCode: setting.keyCode, modifiers: setting.modifiers, action: action)
     }
 }
 
