@@ -5,10 +5,6 @@ remove an entry when it ships.
 
 ## Not yet seen in the running app
 
-- Light mode. Every tile screenshot so far is dark.
-- The stale, waiting and error tiles. They are built but have not been seen.
-- A provider with more than three windows (the "+N more" line).
-- Named accounts in the tile grid.
 - The drawn gauge in the menu bar itself (rendered and checked as an image only), and a
   real macOS alert banner.
 
@@ -17,9 +13,10 @@ remove an entry when it ships.
 - The key-field tile says "paste one in the Meter menu" directly above the field it means.
   Inside the menu it should just say "Paste an OpenRouter API key".
 
-- There is no settings window. Refresh interval (fixed at five minutes), the shortcut, and
-  adding named accounts are CLI-only, and a provider is switched off only from a tile's
-  right-click menu, which nothing on screen points to.
+- A long named-account title is cut in the middle ("Command…OAT · timeout"); the name is
+  the part worth keeping.
+- The settings window's gear button in the menu has only been exercised through
+  `--settings`, not by a real click.
 - A tile measured only in money (DeepSeek, OpenRouter) leaves most of its fixed height empty.
 - Reordering has no visible handle; nothing says a tile can be dragged.
 - OpenRouter cannot show credits left: that endpoint needs a management key.
