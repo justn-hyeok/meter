@@ -225,3 +225,16 @@ public enum MenuGeometry {
         min(max(contentHeight, minimumHeight(choice, screenHeight: screenHeight)), maxHeight(screenHeight: screenHeight))
     }
 }
+
+/// Whether a window can be reached. A frame remembered on a display that has since been
+/// unplugged, or rearranged, lies outside every screen: the window is "open" and nowhere to
+/// be seen, and the button that opened it looks broken.
+public enum WindowPlacement {
+    /// A window needs enough of its top edge on some screen to be found and dragged.
+    public static func isReachable(_ frame: CGRect, screens: [CGRect], minimum: CGFloat = 80) -> Bool {
+        screens.contains { screen in
+            let overlap = screen.intersection(frame)
+            return !overlap.isNull && overlap.width >= minimum && overlap.height >= minimum
+        }
+    }
+}

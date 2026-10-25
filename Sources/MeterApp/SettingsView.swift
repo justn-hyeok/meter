@@ -45,6 +45,11 @@ enum SettingsWindow {
             created.center()
             window = created
         }
+        // A frame restored from before a display was unplugged or rearranged can lie on no
+        // screen at all; centring again is what a new window would have got.
+        if let window, !WindowPlacement.isReachable(window.frame, screens: NSScreen.screens.map(\.visibleFrame)) {
+            window.center()
+        }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }

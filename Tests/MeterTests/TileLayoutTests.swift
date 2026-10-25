@@ -99,3 +99,19 @@ private func place(_ sizes: [TileSize], columns: Int = 4, fillGaps: Bool) -> ([T
     #expect(cards(.fill, content: 300) == 840)
     #expect(cards(.fill, content: 2_000) == 840)
 }
+
+@Test func aWindowOnAnUnpluggedDisplayIsNotReachable() {
+    let main = CGRect(x: 0, y: 0, width: 1728, height: 1084)
+    let window = CGSize(width: 520, height: 668)
+    // Where a window lands after being centred, or dragged around on the screen.
+    #expect(WindowPlacement.isReachable(CGRect(origin: CGPoint(x: 579, y: 137), size: window), screens: [main]))
+    #expect(WindowPlacement.isReachable(CGRect(origin: CGPoint(x: 1500, y: 300), size: window), screens: [main]))
+    // The frame seen in the field: 4000 pt to the left of the only screen.
+    #expect(!WindowPlacement.isReachable(CGRect(origin: CGPoint(x: -4084, y: 137), size: window), screens: [main]))
+    // Hanging off the edge by all but a sliver is as good as gone.
+    #expect(!WindowPlacement.isReachable(CGRect(origin: CGPoint(x: 1700, y: 137), size: window), screens: [main]))
+    // The same frame is reachable once the display it was on is back.
+    let left = CGRect(x: -4096, y: 0, width: 4096, height: 1117)
+    #expect(WindowPlacement.isReachable(CGRect(origin: CGPoint(x: -4084, y: 137), size: window), screens: [left, main]))
+    #expect(!WindowPlacement.isReachable(.zero, screens: []))
+}
