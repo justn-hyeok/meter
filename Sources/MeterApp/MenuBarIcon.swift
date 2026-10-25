@@ -3,19 +3,16 @@ import MeterCore
 
 /// The menu bar gauge: the tiles' 270° arc, filled to the window closest to its limit.
 ///
-/// Drawn as an image because MenuBarExtra paints images but not arbitrary views. Below the
-/// warning threshold it is a template image, so it takes the menu bar's own colour in light
-/// and dark; at the warning and critical levels it switches to the tiles' orange and red,
-/// so a limit about to run out is seen without opening the menu.
+/// Drawn as an image because MenuBarExtra paints images but not arbitrary views. Always a
+/// template image, so it takes the menu bar's own colour in light and dark like the icons
+/// beside it: a red icon was too loud for a window that can sit at 100% for days, and the
+/// fill already says how full it is. Colour is left to the tiles and the alerts.
 @MainActor
 enum MenuBarIcon {
-    enum Level: Equatable { case normal, warning, critical }
-
     /// Usage is drawn in 5% steps, so the image is rebuilt only when the arc would move.
     static func image(usage: Double?, unavailable: Bool) -> NSImage {
         let step = usage.map { (min(max($0, 0), 1) * 20).rounded() / 20 }
-        let level = level(usage)
-        let key = "\(step.map { String($0) } ?? "none")-\(unavailable)-\(level)"
+        let key = "\(step.map { String($0) } ?? "none")-\(unavailable)"
         if let cached = cache[key] { return cached }
 
         let size = NSSize(width: 18, height: 18)
@@ -31,7 +28,7 @@ enum MenuBarIcon {
                 path.lineCapStyle = .round
                 return path
             }
-            let ink = color(level)
+            let ink = NSColor.black
             ink.withAlphaComponent(0.3).setStroke()
             arc(to: 1).stroke()
             if unavailable {
@@ -48,25 +45,10 @@ enum MenuBarIcon {
             }
             return true
         }
-        image.isTemplate = level == .normal
+        image.isTemplate = true
         image.accessibilityDescription = usage.map { "Meter, highest usage \(Int(($0 * 100).rounded())) percent" } ?? "Meter"
         cache[key] = image
         return image
-    }
-
-    static func level(_ usage: Double?) -> Level {
-        guard let usage else { return .normal }
-        if usage >= TightestLimit.critical { return .critical }
-        if usage >= TightestLimit.threshold { return .warning }
-        return .normal
-    }
-
-    private static func color(_ level: Level) -> NSColor {
-        switch level {
-        case .normal: .black
-        case .warning: .systemOrange
-        case .critical: .systemRed
-        }
     }
 
     private static var cache: [String: NSImage] = [:]
