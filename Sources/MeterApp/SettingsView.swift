@@ -60,10 +60,10 @@ struct SettingsButton: View {
         Button {
             SettingsWindow.show(store: store, alerts: alerts, hotKeys: hotKeys)
         } label: {
-            Image(systemName: "gearshape")
+            // A gear alone was easy to miss among the footer's controls.
+            Label("Settings", systemImage: "gearshape")
         }
         .buttonStyle(.plain)
-        .help("Settings")
-        .accessibilityLabel("Settings")
+        .help("Open Meter's settings")
     }
 }
