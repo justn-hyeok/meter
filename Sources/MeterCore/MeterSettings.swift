@@ -94,6 +94,39 @@ public struct MeterSettings {
         provider != .cursor && provider != .hive
     }
 
+    // MARK: - Refresh and shortcut
+
+    private static let refreshIntervalKey = "refresh.interval"
+    private static let hotKeyKey = "hotkey"
+
+    /// The choices the settings window offers, in seconds.
+    public static let refreshIntervals: [TimeInterval] = [60, 120, 300, 600, 900, 1_800]
+
+    /// How often the app refreshes in the background. Five minutes unless changed; a stored
+    /// value outside the offered choices falls back to it.
+    public var refreshInterval: TimeInterval {
+        get {
+            let stored = defaults.double(forKey: Self.refreshIntervalKey)
+            return Self.refreshIntervals.contains(stored) ? stored : 300
+        }
+        nonmutating set { defaults.set(newValue, forKey: Self.refreshIntervalKey) }
+    }
+
+    /// The global shortcut that opens the menu. Nil means the default, ⌃⌥M.
+    public var hotKey: HotKeySetting? {
+        get {
+            guard let data = defaults.data(forKey: Self.hotKeyKey) else { return nil }
+            return try? JSONDecoder().decode(HotKeySetting.self, from: data)
+        }
+        nonmutating set {
+            if let newValue, let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Self.hotKeyKey)
+            } else {
+                defaults.removeObject(forKey: Self.hotKeyKey)
+            }
+        }
+    }
+
     // MARK: - Muted windows
 
     private static let mutedKey = "windows.muted"
@@ -167,4 +200,26 @@ public struct MeterSettings {
     private func key(for account: Account) -> String {
         "enabled.\(account.rawValue)"
     }
+}
+
+/// A global shortcut as Carbon registers it, with how it reads on screen.
+public struct HotKeySetting: Codable, Equatable, Sendable {
+    /// A virtual key code, such as `kVK_ANSI_M`.
+    public var keyCode: Int
+    /// Carbon modifier flags: `cmdKey`, `optionKey`, `controlKey`, `shiftKey`.
+    public var modifiers: Int
+    /// What the settings window and the menu footer show, such as "⌃⌥M".
+    public var display: String
+    /// False switches the shortcut off without forgetting it.
+    public var isEnabled: Bool
+
+    public init(keyCode: Int, modifiers: Int, display: String, isEnabled: Bool = true) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+        self.display = display
+        self.isEnabled = isEnabled
+    }
+
+    /// ⌃⌥M: kVK_ANSI_M with controlKey | optionKey.
+    public static let standard = HotKeySetting(keyCode: 0x2E, modifiers: 0x1000 | 0x0800, display: "⌃⌥M")
 }

@@ -9,6 +9,13 @@ struct MeterApp: App {
     @State private var alerts = AlertCenter()
     @State private var hotKey: GlobalHotKey?
 
+    init() {
+        // `--gallery`: a development window showing every tile state in light and dark.
+        if CommandLine.arguments.contains("--gallery") {
+            DispatchQueue.main.async { StateGallery.show() }
+        }
+    }
+
     var body: some Scene {
         MenuBarExtra {
             MeterMenu(store: store, tokens: tokens, alerts: alerts)
@@ -23,6 +30,10 @@ struct MeterApp: App {
                 }
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView(store: store, alerts: alerts)
+        }
     }
 }
 
@@ -198,6 +209,7 @@ private struct MenuFooter: View {
                         .help("Notify when a limit passes 80% and 95%, or a sign-in stops working")
                 }
                 Spacer()
+                SettingsButton()
                 // The shortcut was in the README and nowhere on screen.
                 Text("⌃⌥M").foregroundStyle(.tertiary).help("Opens and closes Meter from anywhere")
                 Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
@@ -224,7 +236,7 @@ private struct MenuFooter: View {
 
 /// Enabled providers as tiles of one size, two to a row. An odd one out keeps its size
 /// rather than stretching across the row.
-private struct TileGrid: View {
+struct TileGrid: View {
     @Bindable var store: UsageStore
     let drag: CardDrag
     let animation: Animation?
@@ -253,7 +265,7 @@ private struct TileGrid: View {
 
 /// A problem the user can fix, with the fix one click away: copying the sign-in command,
 /// or opening the page. Outside the drag surface, so a click is never taken for a drag.
-private struct IssueRow: View {
+struct IssueRow: View {
     let provider: ProviderID
     let issue: SnapshotIssue
     let snapshot: UsageSnapshot
@@ -316,7 +328,7 @@ private struct IssueRow: View {
 /// Switched-off providers, as chips to switch them back on. They have nothing to show, so
 /// they do not get a tile, and a row of checkboxes among the figures was the noisiest thing
 /// in the old menu.
-private struct HiddenProviders: View {
+struct HiddenProviders: View {
     @Bindable var store: UsageStore
 
     var body: some View {
@@ -343,7 +355,7 @@ private struct HiddenProviders: View {
 }
 
 /// Left-to-right, wrapping onto a new line when the next item would not fit.
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -378,7 +390,7 @@ private struct FlowLayout: Layout {
 
 // MARK: - Tile
 
-private struct ProviderTile: View {
+struct ProviderTile: View {
     let account: Account
     @Bindable var store: UsageStore
     let drag: CardDrag
@@ -492,7 +504,7 @@ private struct ProviderTile: View {
 }
 
 /// The arcs and the headline figure, then every window on a line of its own.
-private struct TileContent: View {
+struct TileContent: View {
     let buckets: [UsageBucket]
     /// Windows drawn without warning colours.
     var muted: Set<String> = []
@@ -587,7 +599,7 @@ private struct TileContent: View {
 }
 
 /// One window: the dot that names its arc, label, figure, reset.
-private struct WindowRow: View {
+struct WindowRow: View {
     let bucket: UsageBucket
     let arcIndex: Int?
     var isMuted = false
@@ -633,7 +645,7 @@ private struct WindowRow: View {
 }
 
 /// Up to three concentric 270° arcs, open at the bottom like a dial, outermost first.
-private struct ArcGauge: View {
+struct ArcGauge: View {
     let fractions: [Double]
     /// Per arc, the fraction that decides its colour; nil keeps it neutral.
     var alarms: [Double?] = []
@@ -674,7 +686,7 @@ private struct ArcGauge: View {
 }
 
 /// How close a window is to its limit, as the one thing colour is allowed to say.
-private enum Severity {
+enum Severity {
     case calm, warning, critical
 
     init(_ fraction: Double?) {
@@ -717,7 +729,7 @@ enum MeterStyle {
     }
 }
 
-private struct KeyField: View {
+struct KeyField: View {
     let provider: ProviderID
     @Bindable var store: UsageStore
     @State private var key = ""

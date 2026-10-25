@@ -82,7 +82,15 @@ public final class UsageStore {
     public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
     /// Windows the user said not to warn about: no colour, no alert, not in the gauge.
     public private(set) var muted: Set<BucketKey>
-    public var refreshInterval: TimeInterval = 300
+    /// Saved in settings; changing it restarts the background loop so the new interval
+    /// applies now rather than after the current wait.
+    public var refreshInterval: TimeInterval {
+        didSet {
+            guard refreshInterval != oldValue else { return }
+            settings.refreshInterval = refreshInterval
+            if refreshTask != nil { start() }
+        }
+    }
     /// Called after every refresh lands, for work that follows the figures, such as alerts.
     public var onUpdate: (@MainActor () -> Void)?
     /// Set while a card is being dragged. The drag moves cards without saving, so nothing may
@@ -133,6 +141,7 @@ public final class UsageStore {
         self.storedKeyProviders = Self.providersWithStoredKeys(secrets)
         self.order = settings.order(of: accounts)
         self.muted = settings.mutedWindows
+        self.refreshInterval = settings.refreshInterval
         self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
     }
 
@@ -307,6 +316,61 @@ public final class UsageStore {
         Task { await refresh(Account(provider)) }
     }
 
+    /// Removes the key typed for a provider's default account, so it falls back to whatever
+    /// the machine has, or asks again.
+    public func clearKey(for provider: ProviderID) throws {
+        try secrets.setSecret(nil, for: provider)
+        try cache?.invalidate(Account(provider))
+        snapshots[Account(provider)] = nil
+        snapshotFetchStartedAt[Account(provider)] = nil
+        storedKeyProviders = Self.providersWithStoredKeys(secrets)
+        credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
+    }
+
+    /// Adds a named account with its key, switched on, the way `meter set-key --name` does.
+    public func addAccount(_ provider: ProviderID, name: String, key: String) throws {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard provider.acceptsNamedAccounts else { throw AccountError.namesNotSupported(provider) }
+        guard Account.isValid(name: name) else { throw AccountError.invalidName(name) }
+        guard !key.isEmpty else { throw AccountError.emptyKey }
+        let account = Account(provider, name: name)
+        let named = accounts.filter { $0.provider == provider && $0.name != nil }
+        guard !named.contains(account) else { throw AccountError.exists(account) }
+        guard named.count < Account.limitPerProvider - 1 else { throw AccountError.full(provider) }
+        try secrets.setSecret(key, for: account)
+        try? cache?.invalidate(account)
+        settings.forget(account)
+        reloadSettings(includingOrder: true)
+        Task { await refresh(account, interactive: true) }
+    }
+
+    /// Removes a named account and its key; a default account cannot be removed, only hidden.
+    public func removeAccount(_ account: Account) throws {
+        guard account.name != nil else { throw AccountError.cannotRemoveDefault(account.provider) }
+        try secrets.setSecret(nil, for: account)
+        settings.forget(account)
+        try? cache?.invalidate(account)
+        snapshots[account] = nil
+        snapshotFetchStartedAt[account] = nil
+        reloadSettings(includingOrder: true)
+    }
+
+    /// A store showing `snapshots` and nothing else: no refresh, no keychain, no files of the
+    /// user's. For the state gallery and previews.
+    public static func preview(_ snapshots: [UsageSnapshot], namedAccounts: [Account] = []) -> UsageStore {
+        let suite = "com.justn.meter.preview.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        let directory = FileManager.default.temporaryDirectory.appending(path: "MeterPreview-\(UUID().uuidString)")
+        let secrets = SecretStore(fileURL: directory.appending(path: "credentials.json"))
+        for account in namedAccounts where account.name != nil { try? secrets.setSecret("preview", for: account) }
+        let settings = MeterSettings(defaults: defaults)
+        for snapshot in snapshots { settings.setEnabled(true, for: snapshot.accountID) }
+        let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: secrets)
+        for snapshot in snapshots { store.snapshots[snapshot.accountID] = snapshot }
+        return store
+    }
+
     /// Test seam: the emphasis rule is worth pinning without standing up a fake provider.
     func replaceSnapshotForTesting(_ snapshot: UsageSnapshot) {
         snapshots[snapshot.accountID] = snapshot
@@ -420,6 +484,26 @@ public final class UsageStore {
         } else {
             snapshots[account] = incoming
             snapshotFetchStartedAt[account] = latestFetchStartedAt[account]
+        }
+    }
+}
+
+public enum AccountError: LocalizedError, Equatable {
+    case namesNotSupported(ProviderID)
+    case invalidName(String)
+    case emptyKey
+    case exists(Account)
+    case full(ProviderID)
+    case cannotRemoveDefault(ProviderID)
+
+    public var errorDescription: String? {
+        switch self {
+        case .namesNotSupported(let provider): "\(provider.title) holds one account: the one its own app or CLI is signed in to."
+        case .invalidName: "Use up to 20 letters, digits, '-', '_' or '.', not starting with '-'."
+        case .emptyKey: "Paste the account's API key."
+        case .exists(let account): "\(account.title) already exists."
+        case .full(let provider): "\(provider.title) already has \(Account.limitPerProvider) accounts: the default and two named ones."
+        case .cannotRemoveDefault(let provider): "The default \(provider.title) account can be hidden, not removed."
         }
     }
 }
