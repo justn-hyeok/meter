@@ -350,6 +350,9 @@ enum CLIArgumentParser {
         case "opencode-go", "opencodego", "opencode": .openCodeGo
         case "openrouter", "open-router": .openRouter
         case "hive", "thehive", "hive-ai": .hive
+        case "opencode-zen", "zen": .openCodeZen
+        case "github-copilot", "copilot": .githubCopilot
+        case "custom": .custom
         default: nil
         }
     }

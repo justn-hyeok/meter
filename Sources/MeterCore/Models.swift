@@ -9,6 +9,10 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     case openCodeGo = "opencode-go"
     case openRouter = "openrouter"
     case hive
+    case openCodeZen = "opencode-zen"
+    case githubCopilot = "github-copilot"
+    /// OpenAI-compatible providers the user adds: every account is a named one.
+    case custom
 
     public var id: String { rawValue }
 
@@ -16,6 +20,7 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     /// machine. Those are the only ones `meter set-key` applies to.
     public var acceptsStoredKey: Bool {
         self == .deepSeek || self == .commandCode || self == .claude || self == .openCodeGo || self == .openRouter
+            || self == .openCodeZen
     }
 
     public var title: String {
@@ -28,6 +33,9 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         case .openCodeGo: "OpenCode Go"
         case .openRouter: "OpenRouter"
         case .hive: "Hive"
+        case .openCodeZen: "OpenCode Zen"
+        case .githubCopilot: "GitHub Copilot"
+        case .custom: "Custom"
         }
     }
 }
@@ -40,7 +48,15 @@ extension ProviderID {
     /// Meter reads that login rather than keeping one of its own.
     public var acceptsNamedAccounts: Bool {
         self == .deepSeek || self == .commandCode || self == .openCodeGo || self == .openRouter
+            || self == .openCodeZen || self == .custom
     }
+
+    /// The default account and named ones, together. Custom providers are all named, and
+    /// people add several.
+    public var accountLimit: Int { self == .custom ? 12 : Account.limitPerProvider }
+
+    /// False for `custom`, which has no default account of its own: only the ones added.
+    public var hasDefaultAccount: Bool { self != .custom }
 }
 
 /// One account of one provider: what a card, a toggle and a place in the order belong to.
@@ -72,7 +88,11 @@ public struct Account: Hashable, Sendable, Identifiable, CustomStringConvertible
     public var rawValue: String { name.map { "\(provider.rawValue)#\($0)" } ?? provider.rawValue }
     public var id: String { rawValue }
     public var description: String { rawValue }
-    public var title: String { name.map { "\(provider.title) · \($0)" } ?? provider.title }
+    /// A custom provider is called by the name it was added under.
+    public var title: String {
+        if provider == .custom, let name { return name }
+        return name.map { "\(provider.title) · \($0)" } ?? provider.title
+    }
 
     /// The default account and two named ones.
     public static let limitPerProvider = 3
@@ -91,7 +111,7 @@ public struct Account: Hashable, Sendable, Identifiable, CustomStringConvertible
     /// Every account on this machine: each provider's default, then the named accounts in
     /// the key file.
     public static func all(in secrets: SecretStore) -> [Account] {
-        ProviderID.allCases.map { Account($0) } + secrets.namedAccounts()
+        ProviderID.allCases.filter(\.hasDefaultAccount).map { Account($0) } + secrets.namedAccounts()
     }
 }
 
@@ -169,7 +189,11 @@ extension ProviderID {
                                      command: nil, url: URL(string: "https://commandcode.ai"))
         case .hive: SignInFix(instruction: "Sign in at portal.thehive.ai in your browser; Meter picks the session up from there",
                               command: nil, url: URL(string: "https://portal.thehive.ai"))
-        case .deepSeek, .openRouter: nil
+        case .openCodeZen: SignInFix(instruction: "Sign in at opencode.ai and copy a new key",
+                                     command: nil, url: URL(string: "https://opencode.ai/auth"))
+        case .githubCopilot: SignInFix(instruction: "Run gh auth login", command: "gh auth login",
+                                       url: URL(string: "https://github.com/settings/copilot"))
+        case .deepSeek, .openRouter, .custom: nil
         }
     }
 }

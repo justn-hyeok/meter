@@ -322,12 +322,12 @@ private struct StubProvider: UsageProvider {
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let settings = MeterSettings(defaults: defaults)
-    settings.providerOrder = [.commandCode, .cursor, .codex, .claude, .deepSeek, .openCodeGo, .openRouter, .hive]
+    settings.providerOrder = [.commandCode, .cursor, .codex, .claude, .deepSeek, .openCodeGo, .openRouter, .hive, .openCodeZen, .githubCopilot]
 
-    let names = CLITextFormatter.providers(settings: settings, accounts: ProviderID.allCases.map { Account($0) })
+    let names = CLITextFormatter.providers(settings: settings, accounts: ProviderID.allCases.filter(\.hasDefaultAccount).map { Account($0) })
         .split(separator: "\n")
         .map { $0.split(separator: " ", omittingEmptySubsequences: true)[1] }
-    #expect(names == ["command-code", "cursor", "codex", "claude", "deepseek", "opencode-go", "openrouter", "hive"])
+    #expect(names == ["command-code", "cursor", "codex", "claude", "deepseek", "opencode-go", "openrouter", "hive", "opencode-zen", "github-copilot"])
 }
 
 @Test func parsesNamedAccounts() throws {
@@ -383,10 +383,10 @@ private struct StubProvider: UsageProvider {
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let settings = MeterSettings(defaults: defaults)
-    let accounts = ProviderID.allCases.map { Account($0) } + [Account(.deepSeek, name: "work")]
+    let accounts = ProviderID.allCases.filter(\.hasDefaultAccount).map { Account($0) } + [Account(.deepSeek, name: "work")]
 
     let lines = CLITextFormatter.providers(settings: settings, accounts: accounts).split(separator: "\n")
-    #expect(lines.last == "enabled   deepseek#work DeepSeek API · work")
+    #expect(lines.last == "enabled   deepseek#work  DeepSeek API · work")
 }
 
 @Test func clearingANamedAccountForgetsItsSwitchAndATypoFails() async throws {

@@ -12,7 +12,7 @@ import Testing
     // needs its desktop app, so it is the one provider the user opts into.
     #expect(!settings.enabled(.cursor))
     #expect(!settings.enabled(.hive))
-    for provider in ProviderID.allCases where provider != .cursor && provider != .hive {
+    for provider in ProviderID.allCases where MeterSettings.defaultEnabled(provider) {
         #expect(settings.enabled(provider))
     }
 
@@ -70,15 +70,15 @@ import Testing
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
     let settings = MeterSettings(defaults: defaults)
-    #expect(settings.providerOrder == ProviderID.allCases)
+    #expect(settings.providerOrder == ProviderID.allCases.filter(\.hasDefaultAccount))
 
-    settings.providerOrder = [.commandCode, .claude, .codex, .cursor, .deepSeek, .openCodeGo, .openRouter, .hive]
-    #expect(MeterSettings(defaults: defaults).providerOrder == [.commandCode, .claude, .codex, .cursor, .deepSeek, .openCodeGo, .openRouter, .hive])
+    settings.providerOrder = [.commandCode, .claude, .codex, .cursor, .deepSeek, .openCodeGo, .openRouter, .hive, .openCodeZen, .githubCopilot]
+    #expect(MeterSettings(defaults: defaults).providerOrder == [.commandCode, .claude, .codex, .cursor, .deepSeek, .openCodeGo, .openRouter, .hive, .openCodeZen, .githubCopilot])
 
     // A list saved before a provider existed, with junk and a duplicate in it: the unknown
     // name goes, the duplicate is kept once, and missing providers join at the end.
     defaults.set(["claude", "not-a-provider", "claude", "codex"], forKey: "providers.order")
-    #expect(settings.providerOrder == [.claude, .codex, .cursor, .deepSeek, .commandCode, .openCodeGo, .openRouter, .hive])
+    #expect(settings.providerOrder == [.claude, .codex, .cursor, .deepSeek, .commandCode, .openCodeGo, .openRouter, .hive, .openCodeZen, .githubCopilot])
 
     // Enabled providers come back in the arranged order, which is what the CLI prints.
     // Cursor is off by default and DeepSeek is switched off here.
@@ -95,10 +95,10 @@ import Testing
     let settings = MeterSettings(defaults: defaults)
     #expect(settings.providerOrder.prefix(2) == [.claude, .codex])
 
-    settings.providerOrder = [.codex, .claude, .cursor, .deepSeek, .commandCode, .openCodeGo, .openRouter, .hive]
+    settings.providerOrder = [.codex, .claude, .cursor, .deepSeek, .commandCode, .openCodeGo, .openRouter, .hive, .openCodeZen, .githubCopilot]
     // It stays where the newer build put it: after Claude.
     #expect(defaults.stringArray(forKey: "providers.order")
-        == ["codex", "claude", "future-ai", "cursor", "deepseek", "command-code", "opencode-go", "openrouter", "hive"])
+        == ["codex", "claude", "future-ai", "cursor", "deepseek", "command-code", "opencode-go", "openrouter", "hive", "opencode-zen", "github-copilot"])
 }
 
 @Test func anAlreadyMigratedInstallDoesNotGainOpenRouter() throws {

@@ -121,6 +121,8 @@ public enum CredentialDoctor {
         case .openCodeGo: openCodeGo(machine)
         case .openRouter: apiKeyBacked(.openRouter, OpenRouterUsageProvider.environmentKey, stored: true, cliFile: nil, machine)
         case .hive: hive(machine)
+        case .openCodeZen, .githubCopilot, .custom:
+            .init(provider: provider, source: "not checked yet", availability: .missing, detail: "not supported yet")
         }
     }
 
