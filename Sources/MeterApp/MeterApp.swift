@@ -516,14 +516,18 @@ private struct TileContent: View {
         return buckets.filter { !shown.contains($0.id) }
     }
 
-    /// The fullest window, or, for an account measured only in money, its first figure.
-    private var headline: UsageBucket? { arcs.first ?? buckets.first }
+    /// The fullest window still warned about, or, for an account measured only in money,
+    /// its first figure. A muted window is not what the tile should lead with.
+    private var headline: UsageBucket? {
+        arcs.first { !muted.contains($0.id) } ?? arcs.first ?? buckets.first
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 if !arcs.isEmpty {
-                    ArcGauge(fractions: arcs.map { $0.fractionUsed ?? 0 }, alarms: arcs.map(alarm))
+                    ArcGauge(fractions: arcs.map { $0.fractionUsed ?? 0 }, alarms: arcs.map(alarm),
+                             dimmed: arcs.map { muted.contains($0.id) })
                         .frame(width: 52, height: 52)
                         .accessibilityHidden(true)
                 }
@@ -597,6 +601,7 @@ private struct WindowRow: View {
             }
             .frame(width: 6, height: 6)
             Text(bucket.label)
+                .strikethrough(isMuted)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -604,7 +609,8 @@ private struct WindowRow: View {
             Text(UsageFormat.value(bucket))
                 .monospacedDigit()
                 .fontWeight(.medium)
-                .foregroundStyle(Severity(alarm).color ?? .primary)
+                .strikethrough(isMuted)
+                .foregroundStyle(isMuted ? AnyShapeStyle(.secondary) : AnyShapeStyle(Severity(alarm).color ?? .primary))
                 .lineLimit(1)
             Text(UsageFormat.reset(bucket) ?? "—")
                 .monospacedDigit()
@@ -622,6 +628,8 @@ private struct ArcGauge: View {
     let fractions: [Double]
     /// Per arc, the fraction that decides its colour; nil keeps it neutral.
     var alarms: [Double?] = []
+    /// Arcs of muted windows, drawn faint so a full one does not dominate the dial.
+    var dimmed: [Bool] = []
 
     var body: some View {
         GeometryReader { proxy in
@@ -634,7 +642,9 @@ private struct ArcGauge: View {
                         arc(to: 1).stroke(MeterStyle.track, style: stroke)
                         // A sliver even at zero, so an empty window still shows where it starts.
                         arc(to: max(used, 0.015)).stroke(
-                            MeterStyle.arcColor(index, fraction: alarms.indices.contains(index) ? alarms[index] : fraction),
+                            dimmed.indices.contains(index) && dimmed[index]
+                                ? Color.primary.opacity(0.22)
+                                : MeterStyle.arcColor(index, fraction: alarms.indices.contains(index) ? alarms[index] : fraction),
                             style: stroke)
                     }
                     .padding(inset + MeterStyle.arcWidth / 2)
