@@ -288,7 +288,7 @@ struct MeterCLIApplication {
       meter mcp
 
     Providers:
-      codex, claude, cursor, deepseek, command-code, opencode-go, openrouter
+      codex, claude, cursor, deepseek, command-code, opencode-go, openrouter, hive
 
     Selection:
       With no provider, status queries the providers enabled in Meter settings.

@@ -8,7 +8,8 @@ private func machine(
     keychain: @escaping @Sendable (String) -> Keychain.Presence = { _ in .missing },
     files: Set<String> = [],
     codexExecutable: URL? = nil,
-    openCodeGoKey: Bool = false
+    openCodeGoKey: Bool = false,
+    hivePortalBrowser: String? = nil
 ) -> DiagnosticEnvironment {
     DiagnosticEnvironment(
         environment: environment,
@@ -16,7 +17,8 @@ private func machine(
         keychain: keychain,
         fileExists: { files.contains($0.lastPathComponent) },
         codexExecutable: { codexExecutable },
-        openCodeGoKey: { openCodeGoKey }
+        openCodeGoKey: { openCodeGoKey },
+        hivePortalBrowser: { hivePortalBrowser }
     )
 }
 

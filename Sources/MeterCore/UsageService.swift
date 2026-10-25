@@ -28,6 +28,7 @@ public struct UsageService: Sendable {
         case .commandCode: CommandCodeUsageProvider(credential: CommandCodeAPIKeyCredential(store: secrets, account: account))
         case .openCodeGo: OpenCodeGoUsageProvider(credential: OpenCodeGoCredential(store: secrets, account: account))
         case .openRouter: OpenRouterUsageProvider(store: secrets, account: account)
+        case .hive: account.name == nil ? HiveUsageProvider(store: secrets) : nil
         }
     }
 

@@ -27,6 +27,7 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, Op
 - 한도가 80%·95%를 넘을 때, 로그인이 끊기거나 곧 만료될 때 macOS 알림. 타일에서 바로 해결 가능(로그인 명령 복사, 페이지 열기)
 - 대화형 사용과 자동화를 위한 독립 실행형 `meter` 명령
 - Claude Code, Codex, OpenCode가 이 Mac에 남기는 로그를 읽어 모델·제공자별 토큰 사용량 표시 (메뉴의 **Tokens** 화면, `meter tokens` / `meter models`)
+- Hive 크레딧 잔액. portal.thehive.ai에 로그인된 브라우저(Chrome, Arc, Dia, Brave, Edge, Aside)의 세션을 가져오고, Meter가 갱신할 때마다 세션이 연장됨
 - AI 에이전트가 남은 한도와 사용 내역을 물어볼 수 있는 MCP 서버 `meter mcp`
 
 ## 요구 사항

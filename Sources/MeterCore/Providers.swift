@@ -2,7 +2,7 @@ import Foundation
 
 /// One numeric reader for every parser here. There were five copies and they had begun to
 /// drift apart.
-private func numericValue(_ value: Any?) -> Double? {
+func numericValue(_ value: Any?) -> Double? {
     if let number = value as? NSNumber { return number.doubleValue }
     if let string = value as? String { return Double(string) }
     return nil
@@ -46,7 +46,7 @@ enum ProviderHTTPError: LocalizedError, Equatable {
 /// Credentials belong to the host that issued them, which is what the README promises.
 /// URLSession would otherwise replay the Authorization and Cookie headers to wherever a
 /// 3xx points.
-private final class SameHostRedirectsOnly: NSObject, URLSessionTaskDelegate {
+final class SameHostRedirectsOnly: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

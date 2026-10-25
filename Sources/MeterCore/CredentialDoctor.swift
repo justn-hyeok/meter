@@ -42,6 +42,8 @@ public struct DiagnosticEnvironment: Sendable {
     /// Whether OpenCode's auth file holds an OpenCode Go key. Its existence alone says
     /// nothing: the file lists every provider OpenCode is connected to.
     public var openCodeGoKey: @Sendable () -> Bool
+    /// The browser holding a Hive portal session, found without decrypting anything.
+    public var hivePortalBrowser: @Sendable () -> String?
 
     init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -49,7 +51,10 @@ public struct DiagnosticEnvironment: Sendable {
         keychain: @escaping @Sendable (String) -> Keychain.Presence = { Keychain.probe(service: $0) },
         fileExists: @escaping @Sendable (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) },
         codexExecutable: @escaping @Sendable () -> URL? = DiagnosticEnvironment.liveCodexExecutable,
-        openCodeGoKey: @escaping @Sendable () -> Bool = { OpenCodeGoCredential().cliKey() != nil }
+        openCodeGoKey: @escaping @Sendable () -> Bool = { OpenCodeGoCredential().cliKey() != nil },
+        hivePortalBrowser: @escaping @Sendable () -> String? = {
+            ChromiumCookies.browser(holding: HiveUsageProvider.cookieName, host: HiveUsageProvider.apiHost)
+        }
     ) {
         self.environment = environment
         self.secrets = secrets
@@ -57,6 +62,7 @@ public struct DiagnosticEnvironment: Sendable {
         self.fileExists = fileExists
         self.codexExecutable = codexExecutable
         self.openCodeGoKey = openCodeGoKey
+        self.hivePortalBrowser = hivePortalBrowser
     }
 
     static var codexAuthFile: URL { CodexUsageProvider.authFile }
@@ -114,6 +120,7 @@ public enum CredentialDoctor {
         )
         case .openCodeGo: openCodeGo(machine)
         case .openRouter: apiKeyBacked(.openRouter, OpenRouterUsageProvider.environmentKey, stored: true, cliFile: nil, machine)
+        case .hive: hive(machine)
         }
     }
 
@@ -181,6 +188,21 @@ public enum CredentialDoctor {
             return .init(provider: provider, source: source, availability: .blocked,
                          detail: "keychain returned OSStatus \(status)")
         }
+    }
+
+    /// The kept session, or a browser signed in to the portal. Neither is read here: a
+    /// stored value is only looked for, and a browser's cookie is found by name, not opened.
+    private static func hive(_ machine: DiagnosticEnvironment) -> CredentialStatus {
+        if machine.secrets.hasSecret(for: .hive) {
+            return .init(provider: .hive, source: "kept portal session", availability: .ready,
+                         detail: "renewed on every refresh")
+        }
+        if let browser = machine.hivePortalBrowser() {
+            return .init(provider: .hive, source: "\(browser) cookie", availability: .ready,
+                         detail: "signed in to portal.thehive.ai; read on first use")
+        }
+        return .init(provider: .hive, source: "browser cookie", availability: .missing,
+                     detail: "sign in at portal.thehive.ai in Chrome, Arc, Dia, Brave, Edge or Aside")
     }
 
     private static func openCodeGo(_ machine: DiagnosticEnvironment) -> CredentialStatus {

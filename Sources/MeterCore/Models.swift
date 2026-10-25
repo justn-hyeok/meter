@@ -8,6 +8,7 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
     case commandCode = "command-code"
     case openCodeGo = "opencode-go"
     case openRouter = "openrouter"
+    case hive
 
     public var id: String { rawValue }
 
@@ -26,6 +27,7 @@ public enum ProviderID: String, CaseIterable, Codable, Identifiable, Sendable {
         case .commandCode: "Command Code GOAT"
         case .openCodeGo: "OpenCode Go"
         case .openRouter: "OpenRouter"
+        case .hive: "Hive"
         }
     }
 }
@@ -163,6 +165,8 @@ extension ProviderID {
                                     command: nil, url: URL(string: "https://opencode.ai/auth"))
         case .commandCode: SignInFix(instruction: "Sign in again at commandcode.ai",
                                      command: nil, url: URL(string: "https://commandcode.ai"))
+        case .hive: SignInFix(instruction: "Sign in at portal.thehive.ai in your browser; Meter picks the session up from there",
+                              command: nil, url: URL(string: "https://portal.thehive.ai"))
         case .deepSeek, .openRouter: nil
         }
     }

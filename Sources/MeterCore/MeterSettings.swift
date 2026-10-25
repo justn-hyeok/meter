@@ -156,8 +156,8 @@ public struct MeterSettings {
     }
 
     /// The providers added since migration 1, with the migration version that added them.
-    private static let addedInVersion: [(id: ProviderID, version: Int)] = [(.openRouter, 2)]
-    private static let migrationVersion = 2
+    private static let addedInVersion: [(id: ProviderID, version: Int)] = [(.openRouter, 2), (.hive, 3)]
+    private static let migrationVersion = 3
 
     private func key(for provider: ProviderID) -> String {
         key(for: Account(provider))
