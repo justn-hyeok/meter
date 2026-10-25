@@ -266,6 +266,7 @@ private struct StateGalleryView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+        .defaultScrollAnchor(.top)
     }
 
     /// One appearance, drawn at the menu's width so the tiles wrap and truncate exactly as

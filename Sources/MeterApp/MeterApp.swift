@@ -10,13 +10,6 @@ struct MeterApp: App {
     @State private var hotKeys = HotKeyController(action: { MenuBarToggle.toggle() })
     @State private var isHotKeyReady = false
 
-    init() {
-        // `--gallery`: a development window showing every tile state in light and dark.
-        if CommandLine.arguments.contains("--gallery") {
-            DispatchQueue.main.async { StateGallery.show() }
-        }
-    }
-
     var body: some Scene {
         MenuBarExtra {
             MeterMenu(store: store, tokens: tokens, alerts: alerts, hotKeys: hotKeys)
@@ -33,10 +26,13 @@ struct MeterApp: App {
                     }
                     store.onUpdate = { [store, alerts] in alerts.check(Array(store.snapshots.values), muted: store.muted) }
                     store.start()
-                    // `--settings`: open the settings window at launch, for checking it.
+                    // Development flags, run once the app has finished launching: `--settings`
+                    // opens the settings window, `--gallery` a window of every tile state in
+                    // light and dark.
                     if CommandLine.arguments.contains("--settings") {
                         SettingsWindow.show(store: store, alerts: alerts, hotKeys: hotKeys)
                     }
+                    if CommandLine.arguments.contains("--gallery") { StateGallery.show() }
                 }
         }
         .menuBarExtraStyle(.window)
