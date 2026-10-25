@@ -7,6 +7,9 @@ import Testing
     #expect(TokenFormat.compact(1_000) == "1k")
     #expect(TokenFormat.compact(12_345) == "12.3k")
     #expect(TokenFormat.compact(123_456) == "123k")
+    // At a rounding boundary the figure keeps three significant figures.
+    #expect(TokenFormat.compact(9_996, fixedWidth: true) == "10.0k")
+    #expect(TokenFormat.compact(99_960, fixedWidth: true) == "100k")
     #expect(TokenFormat.compact(999_999) == "1M")
     #expect(TokenFormat.compact(4_560_000) == "4.56M")
     #expect(TokenFormat.compact(2_000_000_000) == "2B")

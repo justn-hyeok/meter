@@ -55,5 +55,6 @@ import Testing
     #expect(TokenWindow.since("7d", now: now) == .some(now.addingTimeInterval(-7 * 86_400)))
     #expect(TokenWindow.since("all", now: now) == .some(nil))
     #expect(TokenWindow.since("0d", now: now) == nil)
+    #expect(TokenWindow.since("200000000000000d", now: now) == nil)
     #expect(TokenWindow.since("7w", now: now) == nil)
 }

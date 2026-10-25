@@ -188,7 +188,8 @@ private func json(_ output: String) throws -> [String: Any] {
     let bodies = output.map { $0.trimmingCharacters(in: .whitespaces) }
     #expect(bodies.contains { $0.hasPrefix("claude-opus-5-5") && $0.hasSuffix("1 response") })
     #expect(bodies.contains { $0.hasPrefix("claude-sonnet-5-5") && $0.hasSuffix("1 response") })
-    #expect(bodies.contains { $0.hasPrefix("deepseek-v4.1-flash") && $0.hasSuffix("1 response") })
+    // OpenCode last used OpenAI; a model from another provider says which.
+    #expect(bodies.contains { $0.hasPrefix("opencode-go / deepseek-v4.1-flash") && $0.hasSuffix("1 response") })
 }
 
 @Test func modelsListOtherModelsLargestFirst() throws {

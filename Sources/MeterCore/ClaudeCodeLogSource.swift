@@ -31,8 +31,8 @@ public struct ClaudeCodeLogSource: TokenLogSource {
     }
 
     /// `CLAUDE_CONFIG_DIR` holds config directories, not projects directories, and may list
-    /// several installs separated by commas. A directory that does not exist is dropped so a
-    /// stale variable does not fail every read.
+    /// several installs separated by commas. A directory that does not exist is kept: it
+    /// reads as no logs, and Claude Code may create it after Meter starts.
     private static func projectsDirectories(environment: [String: String], homeDirectory: URL) -> [URL] {
         let configured = (environment["CLAUDE_CONFIG_DIR"] ?? "")
             .split(separator: ",")
@@ -41,13 +41,7 @@ public struct ClaudeCodeLogSource: TokenLogSource {
         let configDirectories = configured.isEmpty
             ? [homeDirectory.appending(path: ".claude"), homeDirectory.appending(path: ".config/claude")]
             : configured.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
-        return configDirectories
-            .map { $0.appending(path: "projects") }
-            .filter { url in
-                var isDirectory: ObjCBool = false
-                return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-                    && isDirectory.boolValue
-            }
+        return configDirectories.map { $0.appending(path: "projects") }
     }
 
     /// A file whose modification date is earlier than `since` cannot hold a later response,
@@ -59,7 +53,9 @@ public struct ClaudeCodeLogSource: TokenLogSource {
     public func records(since: Date?) throws -> [TokenRecord] {
         let cutoff = since ?? .distantPast
         let decoder = JSONDecoder()
-        var seen: Set<String> = []
+        // One response is written as several lines, one per content block. If their usage
+        // differs, the line with the most output is the one written last.
+        var index: [String: Int] = [:]
         var records: [TokenRecord] = []
         for directory in projectsDirectories {
             let enumerator = FileManager.default.enumerator(
@@ -79,9 +75,13 @@ public struct ClaudeCodeLogSource: TokenLogSource {
                     guard line.range(of: Self.usageKey) != nil,
                           let entry = try? decoder.decode(LogLine.self, from: line),
                           let record = entry.record(),
-                          record.timestamp >= cutoff,
-                          seen.insert(record.id).inserted else { continue }
-                    records.append(record)
+                          record.timestamp >= cutoff else { continue }
+                    if let earlier = index[record.id] {
+                        if record.tokens.output > records[earlier].tokens.output { records[earlier] = record }
+                    } else {
+                        index[record.id] = records.count
+                        records.append(record)
+                    }
                 }
             }
         }

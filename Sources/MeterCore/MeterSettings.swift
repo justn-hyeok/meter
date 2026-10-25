@@ -103,16 +103,32 @@ public struct MeterSettings {
     /// 0 to 1 for anyone scripting it. Any existing provider key means an existing install,
     /// and its missing providers are written out with the defaults of that version.
     public func migrateIfNeeded() {
-        guard defaults.object(forKey: Self.migrationKey) == nil else { return }
-        defer { defaults.set(1, forKey: Self.migrationKey) }
+        let version = defaults.integer(forKey: Self.migrationKey)
+        guard version < Self.migrationVersion else { return }
+        defer { defaults.set(Self.migrationVersion, forKey: Self.migrationKey) }
 
-        let isExistingInstall = ProviderID.allCases.contains { defaults.object(forKey: key(for: $0)) != nil }
+        // A recorded version is an install that has run before, even if every provider
+        // key has since been left at its default.
+        let isExistingInstall = version > 0
+            || ProviderID.allCases.contains { defaults.object(forKey: key(for: $0)) != nil }
         guard isExistingInstall else { return }
 
-        for provider in ProviderID.allCases where defaults.object(forKey: key(for: provider)) == nil {
-            defaults.set(provider == .codex || provider == .deepSeek, forKey: key(for: provider))
+        if version < 1 {
+            for provider in ProviderID.allCases where defaults.object(forKey: key(for: provider)) == nil {
+                defaults.set(provider == .codex || provider == .deepSeek, forKey: key(for: provider))
+            }
+        }
+        // Each provider added after an install was made starts off for that install.
+        for provider in Self.addedInVersion where provider.version > version {
+            if defaults.object(forKey: key(for: provider.id)) == nil {
+                defaults.set(false, forKey: key(for: provider.id))
+            }
         }
     }
+
+    /// The providers added since migration 1, with the migration version that added them.
+    private static let addedInVersion: [(id: ProviderID, version: Int)] = [(.openRouter, 2)]
+    private static let migrationVersion = 2
 
     private func key(for provider: ProviderID) -> String {
         key(for: Account(provider))

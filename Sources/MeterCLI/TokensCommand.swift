@@ -68,11 +68,13 @@ enum TokensCommand {
                         + "  " + leftAligned(modelLabel(entry), to: modelWidth)
                         + "  " + age(entry.lastUsed, now: now) + " ago"
                 )
-                let others = otherModels(of: entry.tool, excluding: entry.model, in: report.records)
+                let others = otherModels(of: entry, in: report.records)
                 guard !others.isEmpty else { continue }
-                let nameWidth = others.map(\.model.count).max() ?? 0
-                for other in others {
-                    lines.append("  " + leftAligned(other.model, to: nameWidth) + "  " + responses(other.responses))
+                // The provider is named only where it differs from the one used last.
+                let labels = others.map { $0.provider == entry.provider ? $0.model : "\($0.provider) / \($0.model)" }
+                let nameWidth = labels.map(\.count).max() ?? 0
+                for (label, other) in zip(labels, others) {
+                    lines.append("  " + leftAligned(label, to: nameWidth) + "  " + responses(other.responses))
                 }
             }
         }
@@ -169,8 +171,8 @@ enum TokensCommand {
                 provider: entry.provider,
                 model: entry.model,
                 lastUsed: entry.lastUsed,
-                otherModels: otherModels(of: entry.tool, excluding: entry.model, in: report.records)
-                    .map { ModelCount(model: $0.model, responses: $0.responses) }
+                otherModels: otherModels(of: entry, in: report.records)
+                    .map { ModelCount(provider: $0.provider, model: $0.model, responses: $0.responses) }
             )
         }
     }
@@ -178,16 +180,20 @@ enum TokensCommand {
     /// Models a tool used in the window other than the one it used last, largest first.
     ///
     /// The ledger groups by model across every tool, which would credit a model's uses in
-    /// one tool to another, so the counts are taken from this tool's own records.
-    private static func otherModels(of tool: UsageTool, excluding model: String, in records: [TokenRecord]) -> [(model: String, responses: Int)] {
-        var counts: [String: Int] = [:]
-        for record in records where record.tool == tool && record.model != model {
-            counts[record.model, default: 0] += 1
+    /// one tool to another, so the counts are taken from this tool's own records. The same
+    /// model bought from another provider is another entry, as it is in `meter tokens`.
+    private static func otherModels(of last: RecentModel, in records: [TokenRecord]) -> [(provider: String, model: String, responses: Int)] {
+        struct Key: Hashable { let provider: String; let model: String }
+        var counts: [Key: Int] = [:]
+        for record in records where record.tool == last.tool
+            && (record.provider, record.model) != (last.provider, last.model) {
+            counts[Key(provider: record.provider, model: record.model), default: 0] += 1
         }
         return counts
-            .map { (model: $0.key, responses: $0.value) }
+            .map { (provider: $0.key.provider, model: $0.key.model, responses: $0.value) }
             .sorted { lhs, rhs in
-                lhs.responses == rhs.responses ? lhs.model < rhs.model : lhs.responses > rhs.responses
+                lhs.responses != rhs.responses ? lhs.responses > rhs.responses
+                    : (lhs.model, lhs.provider) < (rhs.model, rhs.provider)
             }
     }
 
@@ -379,6 +385,7 @@ private struct TokensEnvelope: Encodable {
 }
 
 private struct ModelCount: Encodable {
+    let provider: String
     let model: String
     let responses: Int
 }

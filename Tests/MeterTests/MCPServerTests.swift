@@ -420,6 +420,15 @@ private func errorCode(_ response: [String: Any]) -> Int? {
     let badProvider = try await toolCall(server, "get_quotas", arguments: ["providers": ["nope"]])
     #expect(errorCode(badProvider) == -32602)
 
+    // An option is not a provider: "-h" once reached the CLI parser and printed help.
+    for flag in ["-h", "--version", "--refresh"] {
+        let option = try await toolCall(server, "get_quotas", arguments: ["providers": [flag]])
+        #expect(errorCode(option) == -32602)
+    }
+
+    let hugeSince = try await toolCall(server, "get_token_usage", arguments: ["since": "200000000000000d"])
+    #expect(errorCode(hugeSince) == -32602)
+
     let noName = try await reply(server, #"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"arguments":{}}}"#)
     #expect(errorCode(noName) == -32602)
 

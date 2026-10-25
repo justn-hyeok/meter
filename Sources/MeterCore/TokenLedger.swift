@@ -255,13 +255,16 @@ public enum TokenWindow {
     public static func since(_ value: String, now: Date = .now) -> Date?? {
         if value.lowercased() == "all" { return .some(nil) }
         guard let unit = value.last, let amount = Int(value.dropLast()), amount > 0 else { return nil }
-        let seconds: Int
+        let multiplier: Int
         switch unit {
-        case "m": seconds = amount * 60
-        case "h": seconds = amount * 3_600
-        case "d": seconds = amount * 86_400
+        case "m": multiplier = 60
+        case "h": multiplier = 3_600
+        case "d": multiplier = 86_400
         default: return nil
         }
+        // A value typed by hand or sent by an MCP client must not overflow and trap.
+        let (seconds, overflow) = amount.multipliedReportingOverflow(by: multiplier)
+        guard !overflow else { return nil }
         return .some(now.addingTimeInterval(-TimeInterval(seconds)))
     }
 }

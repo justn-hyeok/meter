@@ -59,6 +59,10 @@ private struct MeterMenu: View {
             // The token view takes the height the tiles set, so switching tabs never resizes
             // the menu under the pointer; it scrolls inside that height instead.
             ZStack(alignment: .top) {
+                // Removed, not hidden, on the Tokens tab: a hidden key field still took Tab
+                // focus and hidden tiles still showed tooltips. The height it last measured
+                // stays in `cardsHeight`, so switching tabs does not resize the menu.
+                if tab == .limits {
                 ScrollView(.vertical) {
                     VStack(spacing: 10) {
                         TileGrid(store: store, drag: drag, animation: reorderAnimation, moveByKeyboard: moveByKeyboard)
@@ -69,9 +73,7 @@ private struct MeterMenu: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardsHeight = $0 }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .opacity(tab == .limits ? 1 : 0)
-                .allowsHitTesting(tab == .limits)
-                .accessibilityHidden(tab != .limits)
+                }
 
                 if tab == .tokens {
                     ScrollView(.vertical) { TokensView(tokens: tokens) }
@@ -233,6 +235,9 @@ private struct TileGrid: View {
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(CardDrag.space)) } action: {
                         drag.frames[account] = $0
                     }
+                    // A tile scrolled out of the lazy grid, or on a tab not shown, has no
+                    // place on screen; a frame left behind would catch the pointer.
+                    .onDisappear { drag.frames[account] = nil }
                     .accessibilityAction(named: "Move up") { moveByKeyboard(account, -1) }
                     .accessibilityAction(named: "Move down") { moveByKeyboard(account, 1) }
             }
@@ -613,7 +618,11 @@ private struct KeyField: View {
                 .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let failure {
+                // The tile's height is fixed; a long system message must not spill out of it.
                 Text(failure).foregroundStyle(.red)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .help(failure)
             }
         }
         .font(.caption)

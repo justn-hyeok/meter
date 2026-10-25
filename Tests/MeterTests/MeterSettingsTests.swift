@@ -99,3 +99,24 @@ import Testing
     #expect(defaults.stringArray(forKey: "providers.order")
         == ["codex", "claude", "future-ai", "cursor", "deepseek", "command-code", "opencode-go", "openrouter"])
 }
+
+@Test func anAlreadyMigratedInstallDoesNotGainOpenRouter() throws {
+    let suiteName = "MeterTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    // An install that ran migration 1 before OpenRouter existed, with every switch left
+    // at its default: no provider key was ever written.
+    defaults.set(1, forKey: "settings.migration")
+
+    let settings = MeterSettings(defaults: defaults)
+    settings.migrateIfNeeded()
+
+    #expect(!settings.enabled(.openRouter))
+    #expect(settings.enabled(.claude))
+
+    // Switching it on afterwards sticks.
+    settings.setEnabled(true, for: .openRouter)
+    settings.migrateIfNeeded()
+    #expect(settings.enabled(.openRouter))
+}

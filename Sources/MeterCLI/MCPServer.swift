@@ -224,6 +224,11 @@ struct MCPServer {
                 return .invalid("providers must be an array of provider names")
             }
             providers = values.compactMap { $0 as? String }
+            // These go to the CLI's argv parser, where "-h" or "--json" is an option, not a
+            // provider.
+            if let flag = providers.first(where: { $0.hasPrefix("-") }) {
+                return .invalid("Unknown provider '\(flag)'")
+            }
         default:
             return .invalid("providers must be an array of provider names")
         }
@@ -235,6 +240,9 @@ struct MCPServer {
             options = try CLIArgumentParser.parse(["status"] + providers)
         } catch {
             return .invalid(error.localizedDescription)
+        }
+        guard case .status = options.command else {
+            return .invalid("providers must be an array of provider names")
         }
 
         let result = await app.run(.init(command: options.command, json: true, strict: false))

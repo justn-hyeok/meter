@@ -139,6 +139,9 @@ public struct UsageCache: Sendable {
     private struct Document: Codable {
         var version: Int
         var snapshots: [UsageSnapshot]
+        /// Snapshots this build cannot decode - a provider added by a newer build sharing the
+        /// cache. Kept as written so this build neither fails on them nor drops them on save.
+        var foreign: [RawJSON] = []
         var attempts: [String: UsageCacheAttempt]
         var invalidations: [String: Date]
 
@@ -149,12 +152,71 @@ public struct UsageCache: Sendable {
             self.invalidations = invalidations
         }
 
+        private enum CodingKeys: String, CodingKey { case version, snapshots, attempts, invalidations }
+
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             version = try container.decode(Int.self, forKey: .version)
-            snapshots = try container.decode([UsageSnapshot].self, forKey: .snapshots)
+            snapshots = []
+            for entry in try container.decode([RawJSON].self, forKey: .snapshots) {
+                if let snapshot = try? entry.decode(UsageSnapshot.self) {
+                    snapshots.append(snapshot)
+                } else {
+                    foreign.append(entry)
+                }
+            }
             attempts = try container.decodeIfPresent([String: UsageCacheAttempt].self, forKey: .attempts) ?? [:]
             invalidations = try container.decodeIfPresent([String: Date].self, forKey: .invalidations) ?? [:]
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(version, forKey: .version)
+            var entries = try snapshots.map { try RawJSON(encoding: $0) }
+            entries += foreign
+            try container.encode(entries, forKey: .snapshots)
+            try container.encode(attempts, forKey: .attempts)
+            try container.encode(invalidations, forKey: .invalidations)
+        }
+    }
+}
+
+/// Any JSON value, carried through untouched.
+private enum RawJSON: Codable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([RawJSON])
+    case object([String: RawJSON])
+
+    init(encoding value: some Encodable) throws {
+        self = try JSONDecoder().decode(RawJSON.self, from: JSONEncoder().encode(value))
+    }
+
+    func decode<T: Decodable>(_ type: T.Type) throws -> T {
+        try JSONDecoder().decode(T.self, from: JSONEncoder().encode(self))
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(String.self) { self = .string(value) }
+        else if let value = try? container.decode([RawJSON].self) { self = .array(value) }
+        else { self = .object(try container.decode([String: RawJSON].self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .null: try container.encodeNil()
+        case .bool(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .string(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
         }
     }
 }

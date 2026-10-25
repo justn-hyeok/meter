@@ -9,7 +9,8 @@ public enum TokenFormat {
         func scaled(_ divisor: Double, _ suffix: String) -> String {
             let scaled = Double(value) / divisor
             // Three significant figures: enough to compare two rows, few enough to scan.
-            let digits = abs(scaled) < 10 ? 2 : abs(scaled) < 100 ? 1 : 0
+            // Decided on the value as it will round, so 9.996k is "10.0k", not "10.00k".
+            let digits = abs(scaled) < 9.995 ? 2 : abs(scaled) < 99.95 ? 1 : 0
             let text = String(format: "%.\(digits)f", scaled)
             return (fixedWidth ? text : text.replacingOccurrences(of: #"\.0+$|(\.\d*?)0+$"#, with: "$1", options: .regularExpression)) + suffix
         }

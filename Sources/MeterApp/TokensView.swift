@@ -42,6 +42,8 @@ final class TokenStore {
     private let ledger: TokenLedger
     private var loaded: (range: TokenRange, at: Date)?
     private var generation = 0
+    /// The range a read is running for, so opening the menu twice does not read twice.
+    private var inFlight: TokenRange?
 
     init(ledger: TokenLedger = .default) {
         self.ledger = ledger
@@ -50,15 +52,24 @@ final class TokenStore {
     /// Reloads unless this range was read within the last minute, which is about how often
     /// anyone opening the menu could want it.
     func load(force: Bool = false) async {
-        if !force, let loaded, loaded.range == range, Date.now.timeIntervalSince(loaded.at) < 60 { return }
+        if !force, let loaded, loaded.range == range, Date.now.timeIntervalSince(loaded.at) < 60 {
+            // A read for another range may still be running; it must not land on this one.
+            generation += 1
+            inFlight = nil
+            isLoading = false
+            return
+        }
+        if inFlight == range, !force { return }
         generation += 1
         let mine = generation
         let ledger = ledger
         let range = range
         let since = TokenWindow.since(range.rawValue) ?? nil
         isLoading = true
+        inFlight = range
         let report = await Task.detached(priority: .utility) { ledger.read(since: since) }.value
         guard mine == generation else { return }
+        inFlight = nil
         self.report = report
         loaded = (range, .now)
         isLoading = false
