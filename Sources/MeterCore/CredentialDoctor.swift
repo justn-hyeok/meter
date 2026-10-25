@@ -123,8 +123,11 @@ public enum CredentialDoctor {
         case .hive: hive(machine)
         case .openCodeZen: openCodeZen(machine)
         case .githubCopilot: gitHubCopilot(machine)
+        // A custom provider has no default account: every one is a named account, and
+        // `diagnose(_:)` checks those by their stored key.
         case .custom:
-            .init(provider: provider, source: "not checked yet", availability: .missing, detail: "not supported yet")
+            .init(provider: .custom, source: "named account key", availability: .missing,
+                  detail: "custom providers are added in Settings › Providers and checked by name")
         }
     }
 

@@ -8,7 +8,9 @@ struct HiddenProviders: View {
     @Bindable var store: UsageStore
 
     var body: some View {
-        let hidden = store.order.filter { !store.enabled($0) }
+        // A removed account is gone from `order` with its key, so no chip can be left behind
+        // for it; hiding only ever applies to accounts that are still here.
+        let hidden = store.order.filter { !store.enabled($0) && !store.hiddenSuggestions.contains($0) }
         if !hidden.isEmpty {
             FlowLayout(spacing: 6) {
                 ForEach(hidden) { account in
@@ -23,6 +25,10 @@ struct HiddenProviders: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Show \(account.title)")
+                    .contextMenu {
+                        Button("Show \(account.title)") { store.setEnabled(true, for: account) }
+                        Button("Don't suggest again") { store.setSuggestionHidden(true, for: account) }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

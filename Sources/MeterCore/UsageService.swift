@@ -31,8 +31,7 @@ public struct UsageService: Sendable {
         case .hive: account.name == nil ? HiveUsageProvider(store: secrets) : nil
         case .openCodeZen: OpenCodeZenUsageProvider(credential: OpenCodeZenCredential(store: secrets, account: account))
         case .githubCopilot: account.name == nil ? GitHubCopilotUsageProvider() : nil
-        // Filled in by its own provider; until then it says so rather than vanish.
-        case .custom: account.name == nil ? nil : PendingProvider(id: .custom)
+        case .custom: account.name == nil ? nil : CustomUsageProvider(store: secrets, account: account)
         }
     }
 
@@ -63,10 +62,4 @@ public struct UsageService: Sendable {
         }
         return await provider.fetch().for(account)
     }
-}
-
-/// A provider whose collector is not written yet.
-struct PendingProvider: UsageProvider {
-    let id: ProviderID
-    func fetch() async -> UsageSnapshot { .unavailable(id, "\(id.title) is not supported yet") }
 }
