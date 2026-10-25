@@ -33,13 +33,13 @@ struct MeterApp: App {
                     }
                     store.onUpdate = { [store, alerts] in alerts.check(Array(store.snapshots.values), muted: store.muted) }
                     store.start()
+                    // `--settings`: open the settings window at launch, for checking it.
+                    if CommandLine.arguments.contains("--settings") {
+                        SettingsWindow.show(store: store, alerts: alerts, hotKeys: hotKeys)
+                    }
                 }
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            SettingsView(store: store, alerts: alerts, hotKeys: hotKeys)
-        }
     }
 }
 
@@ -94,7 +94,7 @@ private struct MeterMenu: View {
             }
             .frame(height: min(cardsHeight, maxCardsHeight))
             Divider()
-            MenuFooter(alerts: alerts, hotKeys: hotKeys)
+            MenuFooter(store: store, alerts: alerts, hotKeys: hotKeys)
         }
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
@@ -190,6 +190,7 @@ private struct MenuHeader: View {
 }
 
 private struct MenuFooter: View {
+    let store: UsageStore
     @Bindable var alerts: AlertCenter
     let hotKeys: HotKeyController
     @State private var loginItemFailure: String?
@@ -217,7 +218,7 @@ private struct MenuFooter: View {
                         .help("Notify when a limit passes 80% and 95%, or a sign-in stops working")
                 }
                 Spacer()
-                SettingsButton()
+                SettingsButton(store: store, alerts: alerts, hotKeys: hotKeys)
                 // The shortcut was in the README and nowhere on screen, and it changes now.
                 if let display = hotKeys.display {
                     Text(display).foregroundStyle(.tertiary).help("Opens and closes Meter from anywhere")
