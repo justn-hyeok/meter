@@ -47,7 +47,7 @@ Run `meter doctor` to see where each credential comes from and whether it is pre
 
 ## Install
 
-Download `Meter-0.6.2-macos-universal-app.zip` from the [v0.6.2 release](https://github.com/justn-hyeok/meter/releases/tag/v0.6.2), extract it, and move `Meter.app` to `/Applications`. The archive includes the [MIT License](LICENSE) notice.
+Download `Meter-0.6.3-macos-universal-app.zip` from the [v0.6.3 release](https://github.com/justn-hyeok/meter/releases/tag/v0.6.3), extract it, and move `Meter.app` to `/Applications`. The archive includes the [MIT License](LICENSE) notice.
 
 **Required after downloading:** the release is not notarized, so macOS refuses to launch it until you clear the quarantine flag the browser attached. Run this once after moving the app:
 
@@ -259,7 +259,7 @@ See the [tmux manual](https://man.openbsd.org/tmux), [Starship custom modules](h
 
 The default exit status is 0 when at least one provider has a usable observation. Use `--strict` to exit 1 for stale observations or unavailable providers. The command exits 2 when none has data and 64 for invalid arguments. JSON output wraps `snapshots` in `schemaVersion: 4` and follows menu order or the order of arguments supplied. Named accounts have an `account` field; default accounts do not. Automation should identify entries by `provider` and `account`, not array position.
 
-The v0.6.2 release also includes `meter-0.6.2-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
+The v0.6.3 release also includes `meter-0.6.3-macos-universal-cli.zip`. Extract it, move `meter` to a directory on your `PATH`, and clear its quarantine flag the same way (`xattr -d com.apple.quarantine <path>/meter`), or build and install it into `~/.local/bin` from this checkout:
 
 ```sh
 ./Scripts/install-cli.sh
