@@ -147,3 +147,15 @@ private func temporaryAuthFile(_ contents: String) throws -> (URL, () -> Void) {
     #expect(environmentOnly.availability == .blocked)
     #expect(environmentOnly.detail.contains("this shell only"))
 }
+
+@Test func anExpiredKeyIsToldApartFromASignedOutSession() {
+    let expired = Data(#"{"error":{"type":"authentication_error","code":"api_key_expired","message":"expired"}}"#.utf8)
+    #expect(AuthenticatedRequest.rejection(body: expired, signInAt: "opencode.ai") == .keyExpired("opencode.ai"))
+    #expect(CredentialError.keyExpired("opencode.ai").errorDescription == "key expired; create a new one at opencode.ai")
+    for body in [#"{"error":{"code":"invalid_api_key"}}"#, "<html>sign in</html>", ""] {
+        #expect(AuthenticatedRequest.rejection(body: Data(body.utf8), signInAt: "opencode.ai") == .signInRequired("opencode.ai"))
+    }
+    // An expired key still asks for action, so the tile offers the page and the alert fires.
+    let snapshot = UsageSnapshot.unavailable(.openCodeZen, "OpenCode Zen unavailable", error: CredentialError.keyExpired("opencode.ai"))
+    #expect(snapshot.issue == .signInRequired)
+}

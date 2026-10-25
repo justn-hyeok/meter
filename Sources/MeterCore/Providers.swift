@@ -500,9 +500,16 @@ enum AuthenticatedRequest {
         // a sign-in page, which is what Cursor answers an expired session with.
         case 300..<400, 401, 403:
             credential.invalidate()
-            throw CredentialError.signInRequired(signInAt)
+            throw rejection(body: data, signInAt: signInAt)
         default: throw ProviderHTTPError.unexpectedStatus(http.statusCode)
         }
+    }
+
+    /// What a refused request means. Most refusals are a signed-out session, but a service
+    /// that answers `api_key_expired` is naming the real cause, and the cure is a new key.
+    static func rejection(body: Data, signInAt: String) -> CredentialError {
+        let error = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? [String: Any]
+        return error?["code"] as? String == "api_key_expired" ? .keyExpired(signInAt) : .signInRequired(signInAt)
     }
 }
 

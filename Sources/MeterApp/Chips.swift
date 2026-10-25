@@ -38,7 +38,6 @@ struct HiddenProviders: View {
                 // would cut off without a point of room around it.
                 .padding(1)
             }
-            .scrollIndicators(.hidden)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

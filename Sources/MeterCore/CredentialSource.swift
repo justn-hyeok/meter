@@ -20,6 +20,9 @@ extension CredentialSource {
 
 public enum CredentialError: LocalizedError, Equatable {
     case signInRequired(String)
+    /// A key the service itself says has run out. Signing in again does not renew it: the
+    /// fix is a new key from the console, which "sign in again" sent people away from.
+    case keyExpired(String)
     /// A named account whose key is gone. Signing in again would fix the default account,
     /// not this one.
     case noStoredKey(Account)
@@ -27,6 +30,7 @@ public enum CredentialError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .signInRequired(let host): "sign in again at \(host)"
+        case .keyExpired(let host): "key expired; create a new one at \(host)"
         case .noStoredKey(let account):
             "no key stored; run 'meter set-key \(account.provider.rawValue) --name \(account.name ?? "")'"
         }

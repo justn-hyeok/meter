@@ -256,7 +256,12 @@ public struct UsageSnapshot: Identifiable, Codable, Sendable, Equatable {
     /// The one place a provider's failure becomes a snapshot, so a refused credential is
     /// marked as a sign-in problem whichever provider it came from.
     public static func unavailable(_ provider: ProviderID, _ what: String, error: any Error) -> Self {
-        let signIn = (error as? CredentialError).map { if case .signInRequired = $0 { true } else { false } } ?? false
+        let signIn = (error as? CredentialError).map {
+            switch $0 {
+            case .signInRequired, .keyExpired: true
+            case .noStoredKey: false
+            }
+        } ?? false
         return unavailable(provider, "\(what): \(error.localizedDescription)", issue: signIn ? .signInRequired : nil)
     }
 }
