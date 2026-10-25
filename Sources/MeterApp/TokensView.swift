@@ -92,9 +92,15 @@ struct TokensView: View {
                 .fixedSize()
                 Spacer()
                 if let report = tokens.report, !report.records.isEmpty {
-                    Text("\(TokenFormat.compact(report.total.total)) tokens")
-                        .font(.callout.weight(.semibold))
-                        .monospacedDigit()
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("\(TokenFormat.compact(report.total.excludingCacheReads)) tokens")
+                            .font(.callout.weight(.semibold))
+                        Text("+ \(TokenFormat.compact(report.total.cacheRead)) cache reads")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .monospacedDigit()
+                    .help("Input, cache writes and output. Cache reads - the context re-read on every turn - are counted apart.")
                 }
             }
 
@@ -181,7 +187,8 @@ private struct ModelBreakdown: View {
     let summaries: [TokenSummary]
 
     var body: some View {
-        let largest = max(summaries.first?.tokens.total ?? 1, 1)
+        let summaries = summaries.sorted { $0.tokens.excludingCacheReads > $1.tokens.excludingCacheReads }
+        let largest = max(summaries.first?.tokens.excludingCacheReads ?? 1, 1)
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel("By model")
             ForEach(summaries, id: \.key) { summary in
@@ -201,7 +208,7 @@ private struct ModelBreakdown: View {
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
-                        Text(TokenFormat.compact(summary.tokens.total))
+                        Text(TokenFormat.compact(summary.tokens.excludingCacheReads))
                             .monospacedDigit()
                             .fontWeight(.medium)
                     }
@@ -210,7 +217,7 @@ private struct ModelBreakdown: View {
                         Capsule().fill(MeterStyle.track)
                             .overlay(alignment: .leading) {
                                 Capsule().fill(Color.primary.opacity(0.55))
-                                    .frame(width: max(3, proxy.size.width * Double(summary.tokens.total) / Double(largest)))
+                                    .frame(width: max(3, proxy.size.width * Double(summary.tokens.excludingCacheReads) / Double(largest)))
                             }
                     }
                     .frame(height: 4)

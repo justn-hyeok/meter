@@ -51,6 +51,11 @@ public struct TokenCounts: Codable, Sendable, Equatable {
 
     public var total: Int { input + cacheRead + cacheWrite + output }
 
+    /// What this work actually sent and produced: everything but cache reads. A long session
+    /// re-reads its whole context on every turn, so cache reads dwarf the rest and a total
+    /// that includes them says more about context length than about work done.
+    public var excludingCacheReads: Int { input + cacheWrite + output }
+
     public static func + (lhs: Self, rhs: Self) -> Self {
         .init(
             input: lhs.input + rhs.input,

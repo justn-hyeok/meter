@@ -58,3 +58,9 @@ import Testing
     #expect(TokenWindow.since("200000000000000d", now: now) == nil)
     #expect(TokenWindow.since("7w", now: now) == nil)
 }
+
+@Test func workExcludesOnlyCacheReads() {
+    let counts = TokenCounts(input: 10, output: 20, cacheRead: 1_000, cacheWrite: 5, reasoning: 7)
+    #expect(counts.total == 1_035)
+    #expect(counts.excludingCacheReads == 35)
+}
