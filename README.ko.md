@@ -22,7 +22,7 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, Op
 - 제공자 타일을 드래그해서 순서 변경, 터미널 `meter` 출력도 같은 순서
 - 5분마다 자동 갱신 및 메뉴에서 수동 갱신
 - 일시적인 갱신 실패 시 마지막 정상 데이터 보존
-- 타일과 같은 호 모양의 메뉴바 게이지. 가장 높은 사용률만큼 채워지고 80%에서 주황, 95%에서 빨강으로 바뀜
+- 타일과 같은 호 모양의 단색 메뉴바 게이지. 가장 높은 사용률만큼 채워짐
 - 한도가 80%·95%를 넘을 때, 로그인이 끊기거나 곧 만료될 때 macOS 알림. 타일에서 바로 해결 가능(로그인 명령 복사, 페이지 열기)
 - 대화형 사용과 자동화를 위한 독립 실행형 `meter` 명령
 - Claude Code, Codex, OpenCode가 이 Mac에 남기는 로그를 읽어 모델·제공자별 토큰 사용량 표시 (메뉴의 **Tokens** 화면, `meter tokens` / `meter models`)

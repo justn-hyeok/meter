@@ -22,7 +22,7 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - Drag provider tiles to reorder them; the `meter` CLI prints in the same order
 - Automatic refresh every five minutes and manual refresh from the menu
 - Last-good data preserved when a refresh temporarily fails
-- A menu bar gauge drawn like the tiles' arcs, filled to the highest usage and turning orange at 80% and red at 95%
+- A monochrome menu bar gauge drawn like the tiles' arcs, filled to the highest usage
 - macOS notifications when a window passes 80% and 95%, and when a sign-in stops working or is about to end; tiles show the fix (copy the sign-in command, open the page)
 - A standalone `meter` command for interactive use and automation
 - Token usage per model and provider, read from the logs Claude Code, Codex and OpenCode keep on this Mac, in the menu's **Tokens** view and with `meter tokens` / `meter models`
