@@ -122,6 +122,55 @@ import Testing
     #expect(settings.enabled(.openRouter))
 }
 
+/// What 0.6.3 left on disk, opened by 0.7: nothing the user chose is lost, the providers 0.7
+/// added start off, and the layout settings it introduced read as their defaults.
+@Test func anInstallFromBeforeTilesKeepsItsChoicesAndStartsNewProvidersOff() throws {
+    let suiteName = "MeterTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    defaults.set(3, forKey: "settings.migration")
+    defaults.set(true, forKey: "enabled.cursor")
+    defaults.set(false, forKey: "enabled.command-code")
+    defaults.set(["deepseek", "claude", "codex"], forKey: "providers.order")
+    defaults.set(["claude|limit|weekly_all|25"], forKey: "alerts.sent")
+    defaults.set(["cursor|other-models"], forKey: "windows.muted")
+    defaults.set(15 * 60, forKey: "refresh.interval")
+
+    let settings = MeterSettings(defaults: defaults)
+    settings.migrateIfNeeded()
+
+    // Kept.
+    #expect(settings.enabled(.cursor))
+    #expect(!settings.enabled(.commandCode))
+    #expect(settings.enabled(.claude))
+    #expect(settings.enabled(.codex))
+    #expect(Array(settings.providerOrder.prefix(3)) == [.deepSeek, .claude, .codex])
+    #expect(defaults.stringArray(forKey: "alerts.sent") == ["claude|limit|weekly_all|25"])
+    #expect(defaults.stringArray(forKey: "windows.muted") == ["cursor|other-models"])
+
+    // New in 0.7: off, and nothing else turned on.
+    #expect(!settings.enabled(.openCodeZen))
+    #expect(!settings.enabled(.githubCopilot))
+    #expect(settings.providerOrder.contains(.openCodeZen))
+    #expect(settings.providerOrder.contains(.githubCopilot))
+    #expect(!settings.providerOrder.contains(.custom))
+
+    // Layout settings that did not exist: the 0.6 menu, unchanged.
+    #expect(settings.tileSizes.isEmpty)
+    #expect(settings.menuWidth == .standard)
+    #expect(settings.menuHeight == .standard)
+    #expect(settings.fillGaps)
+    #expect(settings.hiddenSuggestions.isEmpty)
+    #expect(settings.customProviders.isEmpty)
+    #expect(settings.alertPercentsText == AlertPercents.defaultText)
+
+    // Running it again changes nothing.
+    settings.migrateIfNeeded()
+    #expect(!settings.enabled(.openCodeZen))
+    #expect(defaults.integer(forKey: "settings.migration") == 4)
+}
+
 @Test func alertPercentsDefaultAndIgnoreJunk() throws {
     let suiteName = "MeterTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suiteName))
