@@ -54,7 +54,7 @@ Cursor, Hive, OpenCode Zen, GitHub Copilot, 커스텀 제공자는 기본이 꺼
 
 ## 설치
 
-[v0.7.1 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.7.1)에서 `Meter-0.7.1-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다. 압축 파일에는 [MIT 라이선스](LICENSE) 고지가 포함됩니다.
+[v0.7.2 릴리즈](https://github.com/justn-hyeok/meter/releases/tag/v0.7.2)에서 `Meter-0.7.2-macos-universal-app.zip`을 내려받아 압축을 풀고 `Meter.app`을 `/Applications`로 옮깁니다. 압축 파일에는 [MIT 라이선스](LICENSE) 고지가 포함됩니다.
 
 **설치 후 필수:** 릴리즈는 공증되지 않아서, 브라우저가 붙인 격리 속성을 지우기 전까지 macOS가 실행을 막습니다. 앱을 옮긴 뒤 한 번만 실행하세요.
 
@@ -266,7 +266,7 @@ format = "[$output]($style)"
 
 기본 모드에서는 하나 이상의 제공자에 사용 가능한 관측값이 있으면 종료 코드 0을 반환합니다. 오래된 값이나 일부 제공자 실패도 코드 1로 처리하려면 `--strict`를 사용합니다. 모든 제공자의 데이터가 없으면 2, 잘못된 인자에는 64를 반환합니다. JSON 출력은 `schemaVersion: 4` 봉투에 `snapshots`를 담고, 메뉴에서 정한 순서 또는 인자로 적은 순서를 따릅니다. 이름 붙인 계정에는 `account` 필드가 붙고 기본 계정에는 붙지 않습니다. 자동화에서는 배열 위치 대신 `provider`와 `account`로 항목을 식별하세요.
 
-v0.7.1 릴리즈에는 `meter-0.7.1-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
+v0.7.2 릴리즈에는 `meter-0.7.2-macos-universal-cli.zip`도 포함됩니다. 압축을 풀어 `meter`를 `PATH`에 포함된 디렉터리로 옮기고 같은 방법으로 격리 속성을 지우거나(`xattr -d com.apple.quarantine <경로>/meter`), 현재 체크아웃에서 릴리즈 빌드를 만들어 `~/.local/bin`에 설치합니다.
 
 ```sh
 ./Scripts/install-cli.sh
