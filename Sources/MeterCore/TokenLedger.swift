@@ -206,6 +206,12 @@ public struct TokenLedgerReport: Sendable {
 
     public var total: TokenCounts { records.reduce(.zero) { $0 + $1.tokens } }
 
+    /// The same read, narrowed to one tool's records and its own source report.
+    public func only(_ tool: UsageTool) -> TokenLedgerReport {
+        TokenLedgerReport(records: records.filter { $0.tool == tool },
+                          sources: sources.filter { $0.tool == tool }, since: since)
+    }
+
     static func key(_ record: TokenRecord, _ grouping: TokenGrouping) -> String {
         switch grouping {
         case .model: record.model

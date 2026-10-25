@@ -216,9 +216,12 @@ Input counts fresh input only; cache reads and writes are their own columns, and
 
 `meter mcp` is a Model Context Protocol server on stdio, with three tools:
 
-- `get_quotas`: plan limits and what is left per account, from Meter.app's last refresh. It never queries a provider, so it can never raise a keychain prompt.
-- `get_token_usage`: tokens by model, provider or tool over a window.
+- `get_limit_warnings`: only what needs attention: windows past 80% or 95% (muted ones left out) and sign-ins that stopped working or are about to end. An empty answer means nothing is close.
+- `get_quotas`: plan limits and what is left per account, from Meter.app's last refresh, with each window's level and any sign-in issue. It never queries a provider, so it can never raise a keychain prompt.
+- `get_token_usage`: tokens by model, provider or tool over a window, optionally for one tool, with tokens excluding cache reads and a `limit` on rows (default 20).
 - `get_current_models`: the model each coding tool used last.
+
+Every tool declares an output schema and is marked read-only. Log reads are shared for 30 seconds, so a burst of calls reads the logs once.
 
 Register it with any MCP client, for example Claude Code:
 

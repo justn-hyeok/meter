@@ -151,23 +151,32 @@ private func errorCode(_ response: [String: Any]) -> Int? {
     let response = try await reply(server, #"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#)
     let result = try #require(response["result"] as? [String: Any])
     let tools = try #require(result["tools"] as? [[String: Any]])
-    #expect(tools.map { $0["name"] as? String } == ["get_quotas", "get_token_usage", "get_current_models"])
+    #expect(tools.map { $0["name"] as? String } == ["get_limit_warnings", "get_quotas", "get_token_usage", "get_current_models"])
 
     for tool in tools {
         #expect((tool["description"] as? String)?.isEmpty == false)
         let schema = try #require(tool["inputSchema"] as? [String: Any])
         #expect(schema["type"] as? String == "object")
         #expect(schema["properties"] as? [String: Any] != nil)
+        // Every tool declares its result shape and that it only reads.
+        let output = try #require(tool["outputSchema"] as? [String: Any])
+        #expect(output["type"] as? String == "object")
+        let annotations = try #require(tool["annotations"] as? [String: Any])
+        #expect(annotations["readOnlyHint"] as? Bool == true)
+        #expect(annotations["openWorldHint"] as? Bool == false)
     }
 
-    let quotas = try #require(tools.first)
+    let quotas = try #require(tools.first { $0["name"] as? String == "get_quotas" })
+    // Every provider is named, so an agent does not guess.
+    #expect(((quotas["inputSchema"] as? [String: Any])?["properties"] as? [String: Any])
+        .flatMap { ($0["providers"] as? [String: Any])?["description"] as? String }?.contains("hive") == true)
     #expect((quotas["description"] as? String)?.contains("last refresh") == true)
     let quotaSchema = try #require(quotas["inputSchema"] as? [String: Any])
     let quotaProperties = try #require(quotaSchema["properties"] as? [String: Any])
     let providers = try #require(quotaProperties["providers"] as? [String: Any])
     #expect(providers["type"] as? String == "array")
 
-    let tokens = try #require(tools[safe: 1])
+    let tokens = try #require(tools.first { $0["name"] as? String == "get_token_usage" })
     let tokenProperties = try #require((tokens["inputSchema"] as? [String: Any])?["properties"] as? [String: Any])
     let by = try #require(tokenProperties["by"] as? [String: Any])
     #expect(by["enum"] as? [String] == ["model", "provider", "tool", "provider-model"])
@@ -440,4 +449,95 @@ private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
+}
+
+// MARK: - 0.6.1 additions
+
+@Test func tokenUsageHonoursLimitAndTool() async throws {
+    let environment = try TestEnvironment()
+    defer { environment.cleanup() }
+    let server = MCPServer(app: environment.app)
+
+    let all = try structured(try await toolCall(server, "get_token_usage", arguments: ["since": "all"]))
+    let allRows = try #require(all["rows"] as? [[String: Any]])
+    #expect(all["omittedRows"] as? Int == 0)
+
+    let limited = try structured(try await toolCall(server, "get_token_usage", arguments: ["since": "all", "limit": 1]))
+    #expect((limited["rows"] as? [[String: Any]])?.count == 1)
+    #expect(limited["omittedRows"] as? Int == allRows.count - 1)
+    // Totals cover every row, not only the ones shown.
+    #expect((limited["totals"] as? [String: Any])?["total"] as? Int == (all["totals"] as? [String: Any])?["total"] as? Int)
+    let first = try #require((limited["rows"] as? [[String: Any]])?.first)
+    #expect(first["excludingCacheReads"] is Int)
+
+    let codex = try structured(try await toolCall(server, "get_token_usage", arguments: ["since": "all", "tool": "codex"]))
+    #expect(codex["tool"] as? String == "codex")
+    let codexRows = try #require(codex["rows"] as? [[String: Any]])
+    #expect(!codexRows.isEmpty)
+    #expect((codex["sources"] as? [[String: Any]])?.map { $0["tool"] as? String } == ["codex"])
+
+    for bad: Any in [0, 201, 2.5, "3", true] {
+        let response = try await toolCall(server, "get_token_usage", arguments: ["limit": bad])
+        #expect((response["error"] as? [String: Any])?["code"] as? Int == -32602)
+    }
+    let badTool = try await toolCall(server, "get_token_usage", arguments: ["tool": "vim"])
+    #expect((badTool["error"] as? [String: Any])?["code"] as? Int == -32602)
+}
+
+/// Counts reads, to show the server reads the logs once for a burst of calls.
+private final class CountingSource: TokenLogSource, @unchecked Sendable {
+    let tool = UsageTool.claudeCode
+    var reads = 0
+    func records(since: Date?) throws -> [TokenRecord] {
+        reads += 1
+        return []
+    }
+}
+
+@Test func aBurstOfCallsReadsTheLogsOnce() async throws {
+    let source = CountingSource()
+    let environment = try TestEnvironment(ledger: TokenLedger(sources: [source]))
+    defer { environment.cleanup() }
+    let server = MCPServer(app: environment.app)
+    _ = try await toolCall(server, "get_token_usage", arguments: ["since": "7d"])
+    _ = try await toolCall(server, "get_current_models", arguments: ["since": "7d"])
+    _ = try await toolCall(server, "get_token_usage", arguments: ["since": "7d", "by": "tool"])
+    #expect(source.reads == 1)
+    _ = try await toolCall(server, "get_token_usage", arguments: ["since": "24h"])
+    #expect(source.reads == 2)
+}
+
+@Test func limitWarningsListOnlyWhatNeedsAttention() async throws {
+    let environment = try TestEnvironment()
+    defer { environment.cleanup() }
+    try environment.cache.save([
+        UsageSnapshot(provider: .claude, buckets: [
+            .init(id: "hour", label: "5-hour", used: 97, limit: 100, remaining: 3, resetAt: .now.addingTimeInterval(3_600), unit: .percent),
+            .init(id: "week", label: "Weekly", used: 40, limit: 100, remaining: 60, resetAt: nil, unit: .percent),
+        ], fetchedAt: .now, source: "test", state: .live, message: nil),
+        UsageSnapshot(provider: .cursor, buckets: [
+            .init(id: "other-models", label: "Other Models", used: 100, limit: 100, remaining: 0, resetAt: nil, unit: .percent),
+            .init(id: "cursor-models", label: "Cursor Models", used: 85, limit: 100, remaining: 15, resetAt: nil, unit: .percent),
+        ], fetchedAt: .now, source: "test", state: .stale, message: "expired", issue: .signInRequired),
+    ])
+    environment.app.settings.mutedWindows = [BucketKey(provider: .cursor, bucketID: "other-models")]
+    let server = MCPServer(app: environment.app)
+
+    let object = try structured(try await toolCall(server, "get_limit_warnings", arguments: ["providers": ["all"]]))
+    let warnings = try #require(object["warnings"] as? [[String: Any]])
+    #expect(warnings.map { $0["window"] as? String } == ["hour", "cursor-models"])
+    #expect(warnings.map { $0["level"] as? String } == ["critical", "warning"])
+    #expect(warnings.last?["stale"] as? Bool == true)
+    let signIn = try #require(object["signIn"] as? [[String: Any]])
+    #expect(signIn.map { $0["provider"] as? String } == ["cursor"])
+    #expect(signIn.first?["issue"] as? String == "signInRequired")
+    #expect((signIn.first?["fix"] as? String)?.contains("cursor-agent login") == true)
+
+    // The quotas tool marks the same muted window, and calls it ok.
+    let quotas = try structured(try await toolCall(server, "get_quotas", arguments: ["providers": ["cursor"]]))
+    let windows = try #require((quotas["accounts"] as? [[String: Any]])?.first?["windows"] as? [[String: Any]])
+    let other = try #require(windows.first { $0["id"] as? String == "other-models" })
+    #expect(other["warningsMuted"] as? Bool == true)
+    #expect(other["level"] as? String == "ok")
+    #expect((quotas["accounts"] as? [[String: Any]])?.first?["issue"] as? String == "signInRequired")
 }
