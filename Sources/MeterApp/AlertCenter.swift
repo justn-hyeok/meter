@@ -27,8 +27,8 @@ final class AlertCenter: NSObject {
 
     /// Called after every refresh. With alerts off, what is due is still recorded as sent,
     /// so switching them back on does not deliver a backlog at once.
-    func check(_ snapshots: [UsageSnapshot]) {
-        let result = UsageAlerts.evaluate(snapshots, sent: settings.alertsSent)
+    func check(_ snapshots: [UsageSnapshot], muted: Set<BucketKey>) {
+        let result = UsageAlerts.evaluate(snapshots, sent: settings.alertsSent, muted: muted)
         settings.alertsSent = result.sent
         guard isEnabled, AppBundle.isBundled, !result.alerts.isEmpty else { return }
         Task { await post(result.alerts) }

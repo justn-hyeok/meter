@@ -97,3 +97,30 @@ private func snapshot(_ provider: ProviderID, _ used: Double, resetAt: Date? = n
     let old = try JSONSerialization.data(withJSONObject: object)
     #expect(try JSONDecoder().decode(UsageSnapshot.self, from: old).issue == nil)
 }
+
+@Test func aMutedWindowNeitherAlertsNorCountsAsTightest() {
+    let full = snapshot(.cursor, 100)
+    let key = BucketKey(provider: .cursor, bucketID: "week")
+    #expect(UsageAlerts.evaluate([full], sent: [], muted: [key], now: now).alerts.isEmpty)
+    #expect(TightestLimit.find(in: [full], muted: [key]) == nil)
+    #expect(TightestLimit.find(in: [full]) == key)
+}
+
+@MainActor
+@Test func mutingIsSavedAndLeavesTheGauge() throws {
+    let suiteName = "MeterTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let settings = MeterSettings(defaults: defaults)
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
+    store.replaceSnapshotForTesting(snapshot(.cursor, 100))
+    store.replaceSnapshotForTesting(snapshot(.claude, 30))
+    #expect(store.highestUsage == 1)
+
+    let key = BucketKey(account: Account(.cursor, name: nil), bucketID: "week")
+    store.setMuted(true, key)
+    #expect(store.highestUsage == 0.3)
+    #expect(MeterSettings(defaults: defaults).mutedWindows == [key])
+    #expect(BucketKey(rawValue: key.rawValue) == key)
+    #expect(BucketKey(rawValue: "deepseek#work|balance") == BucketKey(account: Account(.deepSeek, name: "work"), bucketID: "balance"))
+}

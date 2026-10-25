@@ -51,8 +51,9 @@ enum CLITextFormatter {
     }
 
     /// One line per window, laid out like the menu: label, two-tone bar, figure, reset.
-    static func status(_ snapshots: [UsageSnapshot], now: Date = .now, style: TerminalStyle = .plain) -> String {
-        let tightest = tightestWindow(in: snapshots)
+    static func status(_ snapshots: [UsageSnapshot], now: Date = .now, style: TerminalStyle = .plain,
+                       muted: Set<BucketKey> = []) -> String {
+        let tightest = tightestWindow(in: snapshots, muted: muted)
         return snapshots.map { snapshot in
             let stale = snapshot.state == .stale
             var header = style.wrap(snapshot.accountID.title, [.bold])
@@ -80,8 +81,8 @@ enum CLITextFormatter {
     }
 
     /// The menu's rule, applied to the providers in the order they are printed.
-    static func tightestWindow(in snapshots: [UsageSnapshot]) -> BucketKey? {
-        TightestLimit.find(in: snapshots)
+    static func tightestWindow(in snapshots: [UsageSnapshot], muted: Set<BucketKey> = []) -> BucketKey? {
+        TightestLimit.find(in: snapshots, muted: muted)
     }
 
     private static func fit(_ value: String, width: Int) -> String {

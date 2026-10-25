@@ -20,6 +20,7 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - Launch at login
 - **⌃⌥M** opens and closes the menu from anywhere
 - Drag provider tiles to reorder them; the `meter` CLI prints in the same order
+- Right-click a tile to stop warning about a window that is full by design: no colour, no alert, not in the menu bar gauge
 - Automatic refresh every five minutes and manual refresh from the menu
 - Last-good data preserved when a refresh temporarily fails
 - A monochrome menu bar gauge drawn like the tiles' arcs, filled to the highest usage

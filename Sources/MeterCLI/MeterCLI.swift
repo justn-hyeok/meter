@@ -264,7 +264,7 @@ struct MeterCLIApplication {
                 ? CLITextFormatter.short(snapshots, allWindows: options.allWindows, showReset: options.showReset)
                 : options.json
                 ? try CLIJSONFormatter.status(snapshots)
-                : CLITextFormatter.status(snapshots, style: .detect())
+                : CLITextFormatter.status(snapshots, style: .detect(), muted: settings.mutedWindows)
             return .init(standardOutput: output, standardError: "", exitCode: exitCode)
         } catch {
             return .init(standardOutput: "", standardError: "Could not encode output: \(error.localizedDescription)", exitCode: 2)

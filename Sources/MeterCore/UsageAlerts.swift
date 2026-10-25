@@ -23,6 +23,7 @@ public enum UsageAlerts {
     public static func evaluate(
         _ snapshots: [UsageSnapshot],
         sent: Set<String>,
+        muted: Set<BucketKey> = [],
         now: Date = .now
     ) -> (alerts: [UsageAlert], sent: Set<String>) {
         var alerts: [UsageAlert] = []
@@ -65,7 +66,8 @@ public enum UsageAlerts {
                 continue
             }
             for bucket in snapshot.buckets {
-                guard let fraction = bucket.fractionUsed,
+                guard !muted.contains(BucketKey(account: account, bucketID: bucket.id)),
+                      let fraction = bucket.fractionUsed,
                       let crossed = thresholds.last(where: { fraction >= $0 }) else { continue }
                 // To the hour: some services report a reset that drifts by seconds between
                 // reads, and that must not count as a new period.

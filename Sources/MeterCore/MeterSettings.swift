@@ -93,6 +93,17 @@ public struct MeterSettings {
         provider != .cursor
     }
 
+    // MARK: - Muted windows
+
+    private static let mutedKey = "windows.muted"
+
+    /// Windows not to warn about, shared with the CLI: a window that sits at 100% by design
+    /// would otherwise be red in the menu and bold in `meter` for good.
+    public var mutedWindows: Set<BucketKey> {
+        get { Set((defaults.stringArray(forKey: Self.mutedKey) ?? []).compactMap(BucketKey.init(rawValue:))) }
+        nonmutating set { defaults.set(newValue.map(\.rawValue).sorted(), forKey: Self.mutedKey) }
+    }
+
     // MARK: - Alerts
 
     private static let alertsEnabledKey = "alerts.enabled"

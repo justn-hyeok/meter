@@ -17,6 +17,15 @@ public struct BucketKey: Hashable, Sendable {
     public init(provider: ProviderID, bucketID: String) {
         self.init(account: Account(provider), bucketID: bucketID)
     }
+
+    /// `provider[#name]|bucket`, as settings store it.
+    public var rawValue: String { "\(account.rawValue)|\(bucketID)" }
+
+    public init?(rawValue: String) {
+        guard let bar = rawValue.lastIndex(of: "|"),
+              let account = Account(rawValue: String(rawValue[..<bar])) else { return nil }
+        self.init(account: account, bucketID: String(rawValue[rawValue.index(after: bar)...]))
+    }
 }
 
 /// The window closest to its limit, but only once something is close enough for that to
@@ -33,11 +42,13 @@ public enum TightestLimit {
 
     /// Ties go to the window listed first, so the bold row is the first of the equals the
     /// reader comes to.
-    public static func find(in snapshots: [UsageSnapshot]) -> BucketKey? {
+    /// A muted window is one the user said not to warn about: it never counts as tightest.
+    public static func find(in snapshots: [UsageSnapshot], muted: Set<BucketKey> = []) -> BucketKey? {
         var tightest: (key: BucketKey, fraction: Double)?
         for snapshot in snapshots {
             for bucket in snapshot.buckets {
-                guard let fraction = bucket.fractionUsed, fraction >= threshold else { continue }
+                guard let fraction = bucket.fractionUsed, fraction >= threshold,
+                      !muted.contains(BucketKey(account: snapshot.accountID, bucketID: bucket.id)) else { continue }
                 if tightest == nil || fraction > tightest!.fraction {
                     tightest = (BucketKey(account: snapshot.accountID, bucketID: bucket.id), fraction)
                 }
@@ -69,6 +80,8 @@ public final class UsageStore {
     public private(set) var order: [Account]
     /// Cached so the menu does not probe the machine from inside a SwiftUI body.
     public private(set) var credentialStatus: [ProviderID: CredentialStatus] = [:]
+    /// Windows the user said not to warn about: no colour, no alert, not in the gauge.
+    public private(set) var muted: Set<BucketKey>
     public var refreshInterval: TimeInterval = 300
     /// Called after every refresh lands, for work that follows the figures, such as alerts.
     public var onUpdate: (@MainActor () -> Void)?
@@ -119,6 +132,7 @@ public final class UsageStore {
         self.enabledAccounts = Set(settings.enabledAccounts(accounts))
         self.storedKeyProviders = Self.providersWithStoredKeys(secrets)
         self.order = settings.order(of: accounts)
+        self.muted = settings.mutedWindows
         self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
     }
 
@@ -231,6 +245,8 @@ public final class UsageStore {
         }
         let keys = Self.providersWithStoredKeys(secrets)
         if keys != storedKeyProviders { storedKeyProviders = keys }
+        let mutedNow = settings.mutedWindows
+        if mutedNow != muted { muted = mutedNow }
         let status = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
         if status != credentialStatus { credentialStatus = status }
         // A new or removed account changes which cards exist, so it is taken up even when
@@ -351,7 +367,14 @@ public final class UsageStore {
 
     /// Follows the order on screen, so a tie goes to the card nearer the top.
     public var tightestLimit: BucketKey? {
-        TightestLimit.find(in: order.compactMap { snapshots[$0] })
+        TightestLimit.find(in: order.compactMap { snapshots[$0] }, muted: muted)
+    }
+
+    public func isMuted(_ key: BucketKey) -> Bool { muted.contains(key) }
+
+    public func setMuted(_ isMuted: Bool, _ key: BucketKey) {
+        if isMuted { muted.insert(key) } else { muted.remove(key) }
+        settings.mutedWindows = muted
     }
 
     /// Every enabled provider answered and none produced data. `highestUsage` is nil for
@@ -362,7 +385,10 @@ public final class UsageStore {
     }
 
     public var highestUsage: Double? {
-        snapshots.values.flatMap(\.buckets).compactMap(\.fractionUsed).max()
+        snapshots.values.flatMap { snapshot in
+            snapshot.buckets.filter { !muted.contains(BucketKey(account: snapshot.accountID, bucketID: $0.id)) }
+        }
+        .compactMap(\.fractionUsed).max()
     }
 
     private func merge(_ incoming: UsageSnapshot, token: Int?) {

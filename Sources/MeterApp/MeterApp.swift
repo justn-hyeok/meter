@@ -18,7 +18,7 @@ struct MeterApp: App {
             Image(nsImage: MenuBarIcon.image(usage: store.highestUsage, unavailable: store.isAllUnavailable))
                 .task {
                     if hotKey == nil { hotKey = .openMenu { MenuBarToggle.toggle() } }
-                    store.onUpdate = { [store, alerts] in alerts.check(Array(store.snapshots.values)) }
+                    store.onUpdate = { [store, alerts] in alerts.check(Array(store.snapshots.values), muted: store.muted) }
                     store.start()
                 }
         }
@@ -378,7 +378,12 @@ private struct ProviderTile: View {
     var lifted = false
 
     private var snapshot: UsageSnapshot? { store.snapshots[account] }
-    private var severity: Severity { Severity(snapshot?.buckets.compactMap(\.fractionUsed).max()) }
+    private var muted: Set<String> {
+        Set(store.muted.filter { $0.account == account }.map(\.bucketID))
+    }
+    private var severity: Severity {
+        Severity(snapshot?.buckets.filter { !muted.contains($0.id) }.compactMap(\.fractionUsed).max())
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -386,7 +391,7 @@ private struct ProviderTile: View {
                 header
                 if let snapshot, !snapshot.buckets.isEmpty {
                     // A live tile with an issue row below has one row less to spare.
-                    TileContent(buckets: snapshot.buckets,
+                    TileContent(buckets: snapshot.buckets, muted: muted,
                                 maxRows: snapshot.issue != nil && snapshot.state == .live ? MeterStyle.maxRows - 1 : MeterStyle.maxRows)
                         .opacity(snapshot.state == .stale || isIdle(snapshot) ? 0.55 : 1)
                     if snapshot.state == .stale, snapshot.issue == nil { staleNote(snapshot) }
@@ -420,6 +425,20 @@ private struct ProviderTile: View {
         .contextMenu {
             Button("Refresh \(account.title)") { Task { await store.refresh(account, interactive: true) } }
             Button("Hide \(account.title)") { store.setEnabled(false, for: account) }
+            // A window that sits full by design, such as a plan's bonus models, would be red
+            // and alerting for good. Unchecking it keeps the figure and drops the warning.
+            let windows = snapshot?.buckets.filter { $0.fractionUsed != nil } ?? []
+            if !windows.isEmpty {
+                Section("Warn when nearly used") {
+                    ForEach(windows) { bucket in
+                        let key = BucketKey(account: account, bucketID: bucket.id)
+                        Toggle(bucket.label, isOn: Binding(
+                            get: { !store.isMuted(key) },
+                            set: { store.setMuted(!$0, key) }
+                        ))
+                    }
+                }
+            }
         }
     }
 
@@ -466,7 +485,14 @@ private struct ProviderTile: View {
 /// The arcs and the headline figure, then every window on a line of its own.
 private struct TileContent: View {
     let buckets: [UsageBucket]
+    /// Windows drawn without warning colours.
+    var muted: Set<String> = []
     var maxRows = MeterStyle.maxRows
+
+    /// The fraction that decides a window's colour: none for a muted one.
+    private func alarm(_ bucket: UsageBucket) -> Double? {
+        muted.contains(bucket.id) ? nil : bucket.fractionUsed
+    }
 
     /// The windows the arcs draw: the fullest first, outermost, so the arc that matters is
     /// the longest one.
@@ -497,7 +523,7 @@ private struct TileContent: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 if !arcs.isEmpty {
-                    ArcGauge(fractions: arcs.map { $0.fractionUsed ?? 0 })
+                    ArcGauge(fractions: arcs.map { $0.fractionUsed ?? 0 }, alarms: arcs.map(alarm))
                         .frame(width: 52, height: 52)
                         .accessibilityHidden(true)
                 }
@@ -506,7 +532,7 @@ private struct TileContent: View {
                         Text(UsageFormat.value(headline))
                             .font(.system(size: 22, weight: .semibold, design: .rounded))
                             .monospacedDigit()
-                            .foregroundStyle(Severity(headline.fractionUsed).color ?? .primary)
+                            .foregroundStyle(Severity(alarm(headline)).color ?? .primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                         // The reset is also on the window's own line below, so it is the
@@ -525,7 +551,8 @@ private struct TileContent: View {
             if buckets.count > 1 {
                 VStack(spacing: 3) {
                     ForEach(listed) { bucket in
-                        WindowRow(bucket: bucket, arcIndex: arcs.firstIndex { $0.id == bucket.id })
+                        WindowRow(bucket: bucket, arcIndex: arcs.firstIndex { $0.id == bucket.id },
+                                  isMuted: muted.contains(bucket.id))
                     }
                     if !folded.isEmpty {
                         Text("+\(folded.count) more")
@@ -550,12 +577,25 @@ private struct TileContent: View {
 private struct WindowRow: View {
     let bucket: UsageBucket
     let arcIndex: Int?
+    var isMuted = false
+
+    private var alarm: Double? { isMuted ? nil : bucket.fractionUsed }
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(arcIndex.map { MeterStyle.arcColor($0, fraction: bucket.fractionUsed) } ?? .clear)
-                .frame(width: 6, height: 6)
+            // A muted window's mark takes the dot's place, so its label keeps its width.
+            Group {
+                if isMuted {
+                    Image(systemName: "bell.slash.fill")
+                        .font(.system(size: 7))
+                        .foregroundStyle(.tertiary)
+                        .help("No warning for this window. Right-click the tile to turn it back on.")
+                        .accessibilityLabel("warnings off")
+                } else {
+                    Circle().fill(arcIndex.map { MeterStyle.arcColor($0, fraction: alarm) } ?? .clear)
+                }
+            }
+            .frame(width: 6, height: 6)
             Text(bucket.label)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -564,7 +604,7 @@ private struct WindowRow: View {
             Text(UsageFormat.value(bucket))
                 .monospacedDigit()
                 .fontWeight(.medium)
-                .foregroundStyle(Severity(bucket.fractionUsed).color ?? .primary)
+                .foregroundStyle(Severity(alarm).color ?? .primary)
                 .lineLimit(1)
             Text(UsageFormat.reset(bucket) ?? "—")
                 .monospacedDigit()
@@ -580,6 +620,8 @@ private struct WindowRow: View {
 /// Up to three concentric 270° arcs, open at the bottom like a dial, outermost first.
 private struct ArcGauge: View {
     let fractions: [Double]
+    /// Per arc, the fraction that decides its colour; nil keeps it neutral.
+    var alarms: [Double?] = []
 
     var body: some View {
         GeometryReader { proxy in
@@ -591,7 +633,9 @@ private struct ArcGauge: View {
                     ZStack {
                         arc(to: 1).stroke(MeterStyle.track, style: stroke)
                         // A sliver even at zero, so an empty window still shows where it starts.
-                        arc(to: max(used, 0.015)).stroke(MeterStyle.arcColor(index, fraction: fraction), style: stroke)
+                        arc(to: max(used, 0.015)).stroke(
+                            MeterStyle.arcColor(index, fraction: alarms.indices.contains(index) ? alarms[index] : fraction),
+                            style: stroke)
                     }
                     .padding(inset + MeterStyle.arcWidth / 2)
                 }
