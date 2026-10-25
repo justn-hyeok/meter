@@ -38,3 +38,5 @@ remove an entry when it ships.
 - "Last used" shows Claude Code on a subagent's model (Sonnet) when the main session is on
   Opus. Showing the main session's model, or both, would match what people mean by
   "which model am I using".
+
+- The token caches in `~/Library/Caches/com.justn.meter` keep an entry for every log file ever read and never prune ones whose log was deleted (757 files, 21 MB on the first Mac). Safe to delete; it rebuilds.
