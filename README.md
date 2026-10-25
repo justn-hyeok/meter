@@ -22,7 +22,8 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - Drag provider tiles to reorder them; the `meter` CLI prints in the same order
 - Automatic refresh every five minutes and manual refresh from the menu
 - Last-good data preserved when a refresh temporarily fails
-- Dynamic menu bar gauge based on the highest known usage percentage across enabled providers
+- A menu bar gauge drawn like the tiles' arcs, filled to the highest usage and turning orange at 80% and red at 95%
+- macOS notifications when a window passes 80% and 95%, and when a sign-in stops working or is about to end; tiles show the fix (copy the sign-in command, open the page)
 - A standalone `meter` command for interactive use and automation
 - Token usage per model and provider, read from the logs Claude Code, Codex and OpenCode keep on this Mac, in the menu's **Tokens** view and with `meter tokens` / `meter models`
 - An MCP server, `meter mcp`, so AI agents can ask how much of a plan is left and what spent it
@@ -207,7 +208,7 @@ meter tokens --since 24h --by provider
 meter models
 ```
 
-Input counts fresh input only; cache reads and writes are their own columns, and output includes reasoning. Costs appear only where the tool recorded one (OpenCode); Meter does not estimate prices. Codex's compressed `archived_sessions` are not read.
+Input counts fresh input only; cache reads and writes are their own columns, and output includes reasoning. Costs appear only where the tool recorded one (OpenCode); Meter does not estimate prices. Codex compresses finished sessions to `.jsonl.zst`; Meter reads them through `zstd` (`brew install zstd`) and keeps what it read in `~/Library/Caches/com.justn.meter`, so only the first read is slow. Without `zstd` only uncompressed, recent Codex sessions count. The menu's Tokens view leads with tokens excluding cache reads, with cache reads beside it.
 
 ### MCP server
 
