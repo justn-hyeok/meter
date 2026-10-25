@@ -208,6 +208,15 @@ public struct UsageSnapshot: Identifiable, Codable, Sendable, Equatable {
 
     public var accountID: Account { Account(provider, name: account) }
 
+    /// Last-good figures younger than this still look live. A failed refresh 45 seconds
+    /// later used to dim the tile and add "From 45 sec. ago", which stole a row and made
+    /// numbers that had just arrived look broken.
+    public static let staleVisibleAfter: TimeInterval = 60
+
+    public func isVisiblyStale(now: Date = .now) -> Bool {
+        state == .stale && now.timeIntervalSince(fetchedAt) >= Self.staleVisibleAfter
+    }
+
     /// The same snapshot, filed under `account`.
     public func `for`(_ account: Account) -> Self {
         var copy = self

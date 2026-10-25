@@ -376,6 +376,19 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
     #expect(snapshot.message == "app-server timed out")
 }
 
+@Test func aFreshStaleSnapshotStillLooksLive() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let buckets = [UsageBucket(id: "week", label: "Weekly", used: 50, limit: 100, remaining: 50, resetAt: nil, unit: .percent)]
+    let recent = UsageSnapshot(provider: .claude, buckets: buckets, fetchedAt: now.addingTimeInterval(-45),
+                               source: "test", state: .stale, message: "timed out")
+    #expect(recent.state == .stale)
+    #expect(!recent.isVisiblyStale(now: now))
+
+    let aged = UsageSnapshot(provider: .claude, buckets: buckets, fetchedAt: now.addingTimeInterval(-90),
+                             source: "test", state: .stale, message: "timed out")
+    #expect(aged.isVisiblyStale(now: now))
+}
+
 @Test func commandCodeDoesNotInventAMonthlyCapOnceTheBalanceIsGone() throws {
     // Both fields describe the same period while credits remain, so the pair gives the cap.
     let withBalance = try CommandCodeUsageParser.parse(Data(#"""

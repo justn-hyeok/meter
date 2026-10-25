@@ -162,15 +162,10 @@ private struct MenuHeader: View {
                 }
             }
             if store.isRefreshing || tokens.isLoading { ProgressView().controlSize(.small) }
-            Button {
+            IconButton(systemImage: "arrow.clockwise", accessibilityLabel: "Refresh all") {
                 Task { await store.refreshAll(interactive: true) }
                 if tab == .tokens { Task { await tokens.load(force: true) } }
-            } label: {
-                Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.plain)
-            .help("Refresh all")
-            .accessibilityLabel("Refresh all")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -285,17 +280,23 @@ struct IssueRow: View {
                 .help(detail)
             Spacer(minLength: 0)
             if let command = provider.signInFix?.command {
-                Button {
+                IconButton(
+                    systemImage: "doc.on.doc",
+                    help: "Copy '\(command)'",
+                    accessibilityLabel: "Copy the sign-in command"
+                ) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(command, forType: .string)
-                } label: { Image(systemName: "doc.on.doc") }
-                .help("Copy '\(command)'")
-                .accessibilityLabel("Copy the sign-in command")
+                }
             }
             if let url = provider.signInFix?.url {
-                Button { NSWorkspace.shared.open(url) } label: { Image(systemName: "safari") }
-                    .help("Open \(url.host() ?? url.absoluteString)")
-                    .accessibilityLabel("Open the sign-in page")
+                IconButton(
+                    systemImage: "safari",
+                    help: "Open \(url.host() ?? url.absoluteString)",
+                    accessibilityLabel: "Open the sign-in page"
+                ) {
+                    NSWorkspace.shared.open(url)
+                }
             }
         }
         .buttonStyle(.borderless)
@@ -346,8 +347,8 @@ struct HiddenProviders: View {
                     Button { store.setEnabled(true, for: account) } label: {
                         Label(account.title, systemImage: "plus")
                             .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
                             .overlay(Capsule().strokeBorder(.tertiary, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
                             .contentShape(Capsule())
                     }
@@ -420,9 +421,9 @@ struct ProviderTile: View {
                 if let snapshot, !snapshot.buckets.isEmpty {
                     // A live tile with an issue row below has one row less to spare.
                     TileContent(buckets: snapshot.buckets, muted: muted,
-                                maxRows: snapshot.issue != nil && snapshot.state == .live ? MeterStyle.maxRows - 1 : MeterStyle.maxRows)
-                        .opacity(snapshot.state == .stale || isIdle(snapshot) ? 0.55 : 1)
-                    if snapshot.state == .stale, snapshot.issue == nil { staleNote(snapshot) }
+                                maxRows: needsExtraRow(snapshot) ? MeterStyle.maxRows - 1 : MeterStyle.maxRows)
+                        .opacity(snapshot.isVisiblyStale() || isIdle(snapshot) ? 0.55 : 1)
+                    if snapshot.isVisiblyStale(), snapshot.issue == nil { staleNote(snapshot) }
                 } else {
                     Text(snapshot?.message ?? "Waiting for refresh…")
                         .font(.caption)
@@ -476,6 +477,12 @@ struct ProviderTile: View {
         snapshot.buckets.allSatisfy { $0.fractionUsed == 0 && $0.resetAt == nil }
     }
 
+    /// A sign-in row or an age line takes a window's place, so three windows plus that
+    /// extra line cannot overflow the fixed tile.
+    private func needsExtraRow(_ snapshot: UsageSnapshot) -> Bool {
+        (snapshot.issue != nil && snapshot.state == .live) || (snapshot.isVisiblyStale() && snapshot.issue == nil)
+    }
+
     private var header: some View {
         Text(account.title)
             .font(.callout.weight(.semibold))
@@ -490,7 +497,7 @@ struct ProviderTile: View {
         Label {
             Text("From \(snapshot.fetchedAt.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))")
         } icon: {
-            Image(systemName: "clock.badge.exclamationmark")
+            Image(systemName: "clock")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -501,7 +508,7 @@ struct ProviderTile: View {
     private var dragSurface: some View {
         CardDragSource(
             account: account,
-            help: snapshot?.state == .stale ? (snapshot?.message ?? "Showing the last figures that arrived.") : nil,
+            help: snapshot?.isVisiblyStale() == true ? (snapshot?.message ?? "Showing the last figures that arrived.") : nil,
             onBegin: { point in drag.begin(account, at: point, store: store) },
             onMove: { point in drag.moved(to: point, store: store, animation: animation) },
             onEnd: { dropped in drag.finish(store: store, commit: dropped, animation: animation) }
@@ -714,6 +721,25 @@ enum Severity {
 
 /// The tile design's tokens. Arcs are drawn in three steps of the label colour, so every
 /// colour that is not grey means a limit is close: orange from 80%, red from 95%.
+/// An SF Symbol control whose clickable area is the frame, not the glyph.
+struct IconButton: View {
+    let systemImage: String
+    var help: String?
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help ?? accessibilityLabel)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
 enum MeterStyle {
     static let tileRadius: CGFloat = 12
     /// Fits the title, the arcs and three windows. Every tile is this tall whatever it holds,
