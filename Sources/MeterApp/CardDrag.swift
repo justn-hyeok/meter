@@ -22,10 +22,6 @@ final class CardDrag {
     /// Where the lifted card is drawn: under the pointer, held at the point it was grabbed.
     private(set) var liftedFrame: CGRect?
     @ObservationIgnored private var grabOffset: CGSize = .zero
-    /// When the last move landed. Tiles of two widths reflow when one moves, which can slide
-    /// a different tile under a pointer that has not moved, and without a pause the two
-    /// would trade places back and forth for as long as it stayed there.
-    @ObservationIgnored private var lastMove: Date = .distantPast
 
     func begin(_ account: Account, at point: CGPoint, store: UsageStore) {
         guard let card = frames[account] else { return }
@@ -34,18 +30,16 @@ final class CardDrag {
         orderBefore = store.order
         grabOffset = CGSize(width: point.x - card.minX, height: point.y - card.minY)
         liftedFrame = card
-        lastMove = .distantPast
     }
 
-    /// Moves the carried tile into the place of the tile under the pointer. Past the last
-    /// tile it goes to the end and above the first to the start, so a quick flick that
-    /// overshoots the grid still lands where it was aimed.
+    /// Swaps the carried tile with the tile under the pointer; no other tile moves. Past the
+    /// last tile it swaps with the last and above the first with the first, so a quick flick
+    /// that overshoots the grid still lands where it was aimed.
     func moved(to point: CGPoint, store: UsageStore, animation: Animation?) {
         guard let carried = account else { return }
         if let lifted = liftedFrame {
             liftedFrame = CGRect(origin: CGPoint(x: point.x - grabOffset.width, y: point.y - grabOffset.height), size: lifted.size)
         }
-        guard Date.now.timeIntervalSince(lastMove) > 0.25 else { return }
         let others = store.order.filter { $0 != carried && store.enabled($0) && frames[$0] != nil }
         guard !others.isEmpty else { return }
         var target = others.first { frames[$0]!.contains(point) }
@@ -57,8 +51,7 @@ final class CardDrag {
             else if let first = others.first, point.y < frames[first]!.minY, index(first) < from { target = first }
         }
         if let target {
-            lastMove = .now
-            withAnimation(animation) { store.move(carried, to: target, persist: false) }
+            withAnimation(animation) { store.swap(carried, with: target, persist: false) }
         }
     }
 

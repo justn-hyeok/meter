@@ -506,6 +506,23 @@ private func isolatedSettingsForRegression() throws -> (MeterSettings, () -> Voi
 }
 
 @MainActor
+@Test func dragSwapsTwoTilesAndLeavesTheRestInPlace() async throws {
+    let (settings, cleanup) = try isolatedSettingsForRegression()
+    defer { cleanup() }
+    let store = UsageStore(settings: settings, service: UsageService(providers: [:]), refreshOnEnable: false, secrets: .forTests)
+    let before = store.providerOrder
+
+    store.swap(Account(before[0]), with: Account(before[3]), persist: false)
+    var expected = before
+    expected.swapAt(0, 3)
+    #expect(store.providerOrder == expected)
+    #expect(settings.providerOrder == before)
+
+    store.swap(Account(before[3]), with: Account(before[3]), persist: false)
+    #expect(store.providerOrder == expected)
+}
+
+@MainActor
 @Test func openingTheMenuPicksUpAnOrderSavedElsewhere() async throws {
     let (settings, cleanup) = try isolatedSettingsForRegression()
     defer { cleanup() }

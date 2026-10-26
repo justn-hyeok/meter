@@ -241,6 +241,17 @@ public final class UsageStore {
         if persist { settings.saveOrder(moved) }
     }
 
+    /// Puts two accounts in each other's place and leaves every other one where it was.
+    public func swap(_ account: Account, with other: Account, persist: Bool = true) {
+        guard account != other,
+              let first = order.firstIndex(of: account),
+              let second = order.firstIndex(of: other) else { return }
+        var swapped = order
+        swapped.swapAt(first, second)
+        order = swapped
+        if persist { settings.saveOrder(swapped) }
+    }
+
     func move(_ provider: ProviderID, to target: ProviderID, persist: Bool = true) {
         move(Account(provider), to: Account(target), persist: persist)
     }
