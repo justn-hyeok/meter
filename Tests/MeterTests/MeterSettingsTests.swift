@@ -157,10 +157,8 @@ import Testing
     #expect(!settings.providerOrder.contains(.custom))
 
     // Layout settings that did not exist: the 0.6 menu, unchanged.
-    #expect(settings.tileSizes.isEmpty)
     #expect(settings.menuWidth == .standard)
     #expect(settings.menuHeight == .standard)
-    #expect(settings.fillGaps)
     #expect(settings.hiddenSuggestions.isEmpty)
     #expect(settings.customProviders.isEmpty)
     #expect(settings.alertPercentsText == AlertPercents.defaultText)

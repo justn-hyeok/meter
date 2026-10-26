@@ -19,7 +19,7 @@ Meter는 Codex, Claude, Cursor, DeepSeek API, Command Code GOAT, OpenCode Go, Op
 - 직접 추가하는 OpenAI 호환 제공자
 - DeepSeek, Command Code, OpenCode Go, OpenCode Zen, OpenRouter는 계정을 제공자마다 3개까지 추가하고 각각 별도 카드로 표시
 - 앱을 다시 실행해도 유지되는 제공자별 토글
-- 타일 우클릭으로 크기 변경 (2×2, 2×1, 1×2). 격자가 섞인 크기를 맞추고, 설정에서 메뉴 너비·높이를 정함
+- 설정에서 메뉴 너비·높이를 정함. 메뉴가 넓을수록 한 줄에 타일이 더 들어감
 - 제안 칩을 숨겨 다시 안 나오게 할 수 있음
 - 로그인 시 자동 실행
 - **⌃⌥M**으로 어디서든 메뉴 열고 닫기

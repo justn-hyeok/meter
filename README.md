@@ -19,7 +19,7 @@ Meter is an **MIT-licensed macOS menu bar app and CLI** for checking usage and q
 - Custom OpenAI-compatible providers you add yourself
 - Up to three accounts each for DeepSeek, Command Code, OpenCode Go, OpenCode Zen, and OpenRouter, each on its own card
 - Per-provider toggles that persist across launches
-- Right-click a tile to change its size (2×2, 2×1, 1×2); the grid packs around mixed sizes, and Settings sets the menu's width and height
+- Settings sets the menu's width and height; a wider menu fits more tiles in a row
 - Hide a suggestion chip so it does not come back
 - Launch at login
 - **⌃⌥M** opens and closes the menu from anywhere

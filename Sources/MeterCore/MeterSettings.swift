@@ -129,33 +129,10 @@ public struct MeterSettings {
 
     // MARK: - Layout
 
-    private static let tileSizesKey = "tiles.sizes"
-    private static let fillGapsKey = "tiles.fillGaps"
     private static let menuWidthKey = "menu.width"
     private static let menuHeightKey = "menu.height"
     private static let hiddenSuggestionsKey = "menu.hiddenSuggestions"
     private static let customProvidersKey = "custom.providers"
-
-    /// Each account's tile size; an account not listed is 2×2.
-    public var tileSizes: [Account: TileSize] {
-        get {
-            let stored = defaults.dictionary(forKey: Self.tileSizesKey) as? [String: String] ?? [:]
-            return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in
-                guard let account = Account(rawValue: key), let size = TileSize(rawValue: value) else { return nil }
-                return (account, size)
-            })
-        }
-        nonmutating set {
-            defaults.set(Dictionary(uniqueKeysWithValues: newValue.filter { $0.value != .full }.map { ($0.key.rawValue, $0.value.rawValue) }),
-                         forKey: Self.tileSizesKey)
-        }
-    }
-
-    /// Whether a later tile may move up into a hole a bigger one left. On unless switched off.
-    public var fillGaps: Bool {
-        get { defaults.object(forKey: Self.fillGapsKey) as? Bool ?? true }
-        nonmutating set { defaults.set(newValue, forKey: Self.fillGapsKey) }
-    }
 
     public var menuWidth: MenuWidth {
         get { defaults.string(forKey: Self.menuWidthKey).flatMap(MenuWidth.init(rawValue:)) ?? .standard }

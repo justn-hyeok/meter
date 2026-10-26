@@ -211,3 +211,26 @@ struct MenuOpenObserver: NSViewRepresentable {
     }
 }
 
+/// Keeps the menu's panel as tall as its content. A MenuBarExtra panel grows with its
+/// content but never shrinks: after a menu with more tiles, or a taller chip row, it stayed
+/// that tall with the content floating in it. The content's own height is what is passed in,
+/// because it follows the tiles at once, where the window does not.
+struct PanelHeightFitter: NSViewRepresentable {
+    let height: CGFloat
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        guard height > 0 else { return }
+        // After this layout pass: the window is being resized by the same pass that called this.
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window, abs(window.contentLayoutRect.height - height) > 1 else { return }
+            let top = window.frame.maxY
+            window.setContentSize(NSSize(width: window.contentLayoutRect.width, height: height))
+            // Hung from its top edge: the panel hangs from the menu bar.
+            var frame = window.frame
+            frame.origin.y = top - frame.height
+            window.setFrame(frame, display: true)
+        }
+    }
+}

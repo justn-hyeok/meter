@@ -83,12 +83,10 @@ public final class UsageStore {
     /// Windows the user said not to warn about: no colour, no alert, not in the gauge.
     public private(set) var muted: Set<BucketKey>
     /// Each account's tile size; one not listed is 2×2.
-    public private(set) var tileSizes: [Account: TileSize]
     /// Switched-off accounts whose "+" chip is put away.
     public private(set) var hiddenSuggestions: Set<Account>
     /// Custom OpenAI-compatible providers, by account name.
     public private(set) var customProviders: [String: CustomProviderConfig]
-    public var fillGaps: Bool { didSet { settings.fillGaps = fillGaps } }
     public var menuWidth: MenuWidth { didSet { settings.menuWidth = menuWidth } }
     public var menuHeight: MenuHeight { didSet { settings.menuHeight = menuHeight } }
     /// Saved in settings; changing it restarts the background loop so the new interval
@@ -153,10 +151,8 @@ public final class UsageStore {
         self.order = settings.order(of: accounts)
         self.muted = settings.mutedWindows
         self.refreshInterval = settings.refreshInterval
-        self.tileSizes = settings.tileSizes
         self.hiddenSuggestions = settings.hiddenSuggestions
         self.customProviders = settings.customProviders
-        self.fillGaps = settings.fillGaps
         self.menuWidth = settings.menuWidth
         self.menuHeight = settings.menuHeight
         self.credentialStatus = Dictionary(uniqueKeysWithValues: CredentialDoctor.diagnose().map { ($0.provider, $0) })
@@ -274,8 +270,6 @@ public final class UsageStore {
         if keys != storedKeyProviders { storedKeyProviders = keys }
         let mutedNow = settings.mutedWindows
         if mutedNow != muted { muted = mutedNow }
-        let sizesNow = settings.tileSizes
-        if sizesNow != tileSizes { tileSizes = sizesNow }
         let hiddenNow = settings.hiddenSuggestions
         if hiddenNow != hiddenSuggestions { hiddenSuggestions = hiddenNow }
         let customNow = settings.customProviders
@@ -468,13 +462,6 @@ public final class UsageStore {
     }
 
     public func isMuted(_ key: BucketKey) -> Bool { muted.contains(key) }
-
-    public func tileSize(_ account: Account) -> TileSize { tileSizes[account] ?? .full }
-
-    public func setTileSize(_ size: TileSize, for account: Account) {
-        tileSizes[account] = size == .full ? nil : size
-        settings.tileSizes = tileSizes
-    }
 
     /// Puts a switched-off account's "+" chip away, or brings it back.
     public func setSuggestionHidden(_ hidden: Bool, for account: Account) {

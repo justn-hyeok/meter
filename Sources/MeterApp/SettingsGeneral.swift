@@ -44,10 +44,6 @@ struct GeneralSettingsTab: View {
                         Text(height.title).tag(height)
                     }
                 }
-                Toggle("Fill gaps between tiles", isOn: $store.fillGaps)
-                Text("A later tile moves up into a hole a bigger one left. Off keeps your order exactly.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section {

@@ -18,7 +18,6 @@ struct ProvidersSettingsTab: View {
                         get: { store.enabled(Account(provider)) },
                         set: { store.setEnabled($0, for: Account(provider)) }
                     ))
-                    TileSizePicker(account: Account(provider), store: store)
                     if alerts.isEnabled {
                         AccountPercentsField(account: Account(provider), alerts: alerts)
                     }
@@ -38,29 +37,6 @@ struct ProvidersSettingsTab: View {
             NotSuggestedSection(store: store)
         }
         .formStyle(.grouped)
-    }
-}
-
-/// The same choice as the tile's right-click Size menu, for someone who has not found it.
-private struct TileSizePicker: View {
-    let account: Account
-    @Bindable var store: UsageStore
-
-    /// What the tile may be, plus the size it already is: a size the account was set to
-    /// before its figures changed would otherwise have no row to show as selected.
-    private var sizes: [TileSize] {
-        let offered = TileSize.offered(for: store.snapshots[account])
-        let current = store.tileSize(account)
-        return offered.contains(current) ? offered : offered + [current]
-    }
-
-    var body: some View {
-        Picker("Tile size", selection: Binding(
-            get: { store.tileSize(account) },
-            set: { store.setTileSize($0, for: account) }
-        )) {
-            ForEach(sizes, id: \.self) { Text($0.title).tag($0) }
-        }
     }
 }
 
@@ -201,7 +177,6 @@ private struct NamedAccountControls: View {
                         get: { store.enabled(account) },
                         set: { store.setEnabled($0, for: account) }
                     ))
-                    TileSizePicker(account: account, store: store)
                     if alerts.isEnabled {
                         AccountPercentsField(account: account, alerts: alerts)
                     }
@@ -298,7 +273,6 @@ private struct CustomProvidersSection: View {
                         get: { store.enabled(account) },
                         set: { store.setEnabled($0, for: account) }
                     ))
-                    TileSizePicker(account: account, store: store)
                 }
             }
             if let failure {

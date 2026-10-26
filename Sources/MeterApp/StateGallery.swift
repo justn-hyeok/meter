@@ -83,9 +83,7 @@ private struct GalleryEntry: Identifiable {
 @MainActor
 private enum GalleryData {
     struct Data {
-        /// One store per size. A preview store draws every account it holds at one size, and
-        /// the three sections show the same accounts, so they cannot share one store.
-        let stores: [TileSize: UsageStore]
+        let store: UsageStore
         let entries: [GalleryEntry]
     }
 
@@ -230,16 +228,11 @@ private enum GalleryData {
             GalleryEntry(state: "13 · Named account", account: work),
         ]
 
-        let stores = Dictionary(uniqueKeysWithValues: TileSize.allCases.map { size -> (TileSize, UsageStore) in
-            let store = UsageStore.preview(snapshots, namedAccounts: entries.map(\.account).filter { $0.name != nil })
-            // Window-level rather than per snapshot: muting is what the menu's right-click menu
-            // writes, and the tile should draw it the same way.
-            store.setMuted(true, BucketKey(account: muted, bucketID: "other-models"))
-            // The tile reads its size from the store, so the section's store has to hold it.
-            for entry in entries { store.setTileSize(size, for: entry.account) }
-            return (size, store)
-        })
-        return Data(stores: stores, entries: entries)
+        let store = UsageStore.preview(snapshots, namedAccounts: entries.map(\.account).filter { $0.name != nil })
+        // Window-level rather than per snapshot: muting is what the menu's right-click menu
+        // writes, and the tile should draw it the same way.
+        store.setMuted(true, BucketKey(account: muted, bucketID: "other-models"))
+        return Data(store: store, entries: entries)
     }
 
     private static func percent(_ id: String, _ label: String, _ used: Double, resetsIn hours: Double? = nil, from now: Date = .now) -> UsageBucket {
@@ -283,9 +276,7 @@ private struct StateGalleryView: View {
             Text(scheme == .light ? "Light" : "Dark")
                 .font(.headline)
                 .padding(.horizontal, 2)
-            ForEach(TileSize.allCases, id: \.self) { size in
-                section(size)
-            }
+            states
         }
         .padding(10)
         .frame(width: 380, alignment: .top)
@@ -295,29 +286,21 @@ private struct StateGalleryView: View {
         .environment(\.colorScheme, scheme)
     }
 
-    /// Every state at one size. The tiles are given the same frames the grid gives them, so
-    /// a 2×1 is 176 × 80 and a 1×2 is 84 × 168: two and four to the column's 360 pt.
-    private func section(_ size: TileSize) -> some View {
-        let store = data.stores[size]!
-        let columns = size == .narrow ? 4 : 2
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(size.title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 2)
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: CompactStyle.gap), count: columns),
-                spacing: CompactStyle.gap
-            ) {
-                ForEach(data.entries) { entry in
-                    VStack(alignment: .leading, spacing: 4) {
-                        ProviderTile(account: entry.account, store: store, drag: drag, animation: nil)
-                            .frame(width: CompactStyle.width(for: size), height: CompactStyle.height(for: size))
-                        Text(entry.state)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
+    /// Every state, at the size the grid gives a tile.
+    private var states: some View {
+        let frame = MenuGeometry.size(TilePlacement(column: 0, row: 0, columns: TileLayout.tileColumns, rows: TileLayout.tileRows))
+        return LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: MenuGeometry.gap), count: 2),
+            spacing: MenuGeometry.gap
+        ) {
+            ForEach(data.entries) { entry in
+                VStack(alignment: .leading, spacing: 4) {
+                    ProviderTile(account: entry.account, store: data.store, drag: drag, animation: nil)
+                        .frame(width: frame.width, height: frame.height)
+                    Text(entry.state)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
         }

@@ -54,6 +54,7 @@ private struct MeterMenu: View {
     @State private var tab = MenuTab.limits
     @State private var drag = CardDrag()
     @State private var cardsHeight: CGFloat = 0
+    @State private var panelHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -94,13 +95,12 @@ private struct MeterMenu: View {
         }
         .frame(width: MenuGeometry.width(store.menuWidth, screenWidth: screenWidth))
         .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
+        // Not before the tiles have been measured: until then the content is only the header
+        // and footer, and the panel would shrink to that and jump back.
+        .background(PanelHeightFitter(height: cardsHeight > 0 ? panelHeight : 0))
         .overlay(alignment: .topLeading) { liftedTile }
         .coordinateSpace(.named(CardDrag.space))
-        // "Add key…" in a small tile opens the settings window, which needs objects only the
-        // menu holds.
-        .environment(\.openMeterSettings, { [store, alerts, hotKeys] in
-            SettingsWindow.show(store: store, alerts: alerts, hotKeys: hotKeys)
-        })
         // Opening the menu is the moment a keychain dialog is welcome; the five-minute
         // refresh never raises one.
         .background(MenuOpenObserver {
@@ -253,7 +253,7 @@ private struct MenuFooter: View {
 
 // MARK: - Grid
 
-/// Enabled providers as tiles of mixed sizes, placed by `TileLayout.pack`: the same packer
+/// Enabled providers as tiles, placed by `TileLayout.pack`: the same packer
 /// the CLI and the drag's drop targets read, so what is drawn is what those see.
 struct TileGrid: View {
     @Bindable var store: UsageStore
@@ -267,17 +267,12 @@ struct TileGrid: View {
     var body: some View {
         let visible = store.order.filter(store.enabled)
         let columns = MenuGeometry.columns(store.menuWidth, screenWidth: screenWidth)
-        let packed = TileLayout.pack(
-            visible.map { (id: $0, size: store.tileSize($0)) },
-            columns: columns,
-            fillGaps: store.fillGaps
-        )
+        let packed = TileLayout.pack(visible, columns: columns)
         TileGridLayout(placements: visible.map { packed.placements[$0]! }, columns: columns, rows: packed.rows) {
             ForEach(visible) { account in
                 let frame = MenuGeometry.size(packed.placements[account]!)
                 ProviderTile(account: account, store: store, drag: drag, animation: animation)
-                    // The grid owns the tile's footprint: the tile draws into whatever frame
-                    // it is handed, so one view fills a 2×1 or a 1×2 place as well as a 2×2.
+                    // The grid owns the tile's footprint: the tile draws into the frame it is handed.
                     .frame(width: frame.width, height: frame.height)
                     // The carried tile leaves an empty place behind: the tile itself is
                     // what moves under the pointer, and a faded copy made it look like two.
@@ -295,9 +290,7 @@ struct TileGrid: View {
     }
 }
 
-/// Places every tile at the cells `TileLayout.pack` gave it. A tile of two cells is exactly
-/// as wide as two one-cell tiles and the gap between them, so a row of mixed sizes still
-/// lines up on the columns.
+/// Places every tile at the cells `TileLayout.pack` gave it.
 private struct TileGridLayout: Layout {
     /// One per subview, in the order the grid adds them.
     let placements: [TilePlacement]
@@ -382,8 +375,7 @@ struct IssueRow: View {
         Self.detail(provider: provider, issue: issue, snapshot: snapshot)
     }
 
-    /// The whole explanation, for the tooltip. Shared with the compact tiles, whose one
-    /// line says only the first sentence of it.
+    /// The whole explanation, for the tooltip.
     nonisolated static func detail(provider: ProviderID, issue: SnapshotIssue?, snapshot: UsageSnapshot) -> String {
         var lines = [provider.signInFix?.instruction ?? snapshot.message ?? ""]
         if case .expiresSoon(let date)? = issue {
@@ -406,12 +398,7 @@ struct ProviderTile: View {
     /// The copy drawn under the pointer during a drag: no drag surface of its own.
     var lifted = false
 
-    @Environment(\.openMeterSettings) private var openSettings
-
     private var snapshot: UsageSnapshot? { store.snapshots[account] }
-    /// The grid hands each tile its size through the account; nothing is passed in, so a
-    /// tile redrawn after a right-click is the new size at once.
-    private var size: TileSize { store.tileSize(account) }
     private var muted: Set<String> {
         Set(store.muted.filter { $0.account == account }.map(\.bucketID))
     }
@@ -420,7 +407,7 @@ struct ProviderTile: View {
     }
 
     var body: some View {
-        tile
+        full
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: MeterStyle.tileRadius))
             .overlay {
                 // A tile at its limit is outlined, so it is found before any figure is read.
@@ -431,11 +418,7 @@ struct ProviderTile: View {
             .contextMenu { menu }
     }
 
-    @ViewBuilder private var tile: some View {
-        if size == .full { full } else { compact }
-    }
-
-    /// The 2×2 tile: every window, the key field and the issue row, as it has always been.
+    /// Every window, the key field and the issue row.
     private var full: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 10) {
@@ -468,40 +451,9 @@ struct ProviderTile: View {
         .frame(height: MeterStyle.tileHeight)
     }
 
-    /// The 2×1 and 1×2 tiles: one dial and one figure, with a single line for anything that
-    /// needs explaining. The copy and open buttons of `IssueRow` stay in the full tile.
-    private var compact: some View {
-        let notice = CompactNotice.find(snapshot, account: account, needsKey: store.needsKey(account))
-        return VStack(alignment: .leading, spacing: 2) {
-            CompactTileContent(account: account, store: store, size: size, showsCaption: notice == nil)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                // The figures only: "Add key…" below is a button, and a drag surface over it
-                // would take the click.
-                .overlay { if !lifted { dragSurface } }
-            if let notice {
-                CompactNoticeLine(notice: notice, openSettings: openSettings)
-            }
-        }
-        .padding(CompactStyle.padding)
-        .frame(height: CompactStyle.height(for: size))
-    }
-
     @ViewBuilder private var menu: some View {
         Button("Refresh \(account.title)") { Task { await store.refresh(account, interactive: true) } }
         Button("Hide \(account.title)") { store.setEnabled(false, for: account) }
-        Section("Size") {
-            ForEach(TileSize.offered(for: snapshot), id: \.self) { option in
-                Button {
-                    store.setTileSize(option, for: account)
-                } label: {
-                    if option == size {
-                        Label(option.title, systemImage: "checkmark")
-                    } else {
-                        Text(option.title)
-                    }
-                }
-            }
-        }
         // A window that sits full by design, such as a plan's bonus models, would be red
         // and alerting for good. Unchecking it keeps the figure and drops the warning.
         let windows = snapshot?.buckets.filter { $0.alertFraction != nil } ?? []
