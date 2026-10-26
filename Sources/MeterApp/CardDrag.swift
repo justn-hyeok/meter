@@ -227,3 +227,39 @@ struct PanelHeightFitter: NSViewRepresentable {
         }
     }
 }
+
+/// Reports the screen the menu panel is on. `NSScreen.main` is the screen of the focused
+/// window, which on a second display is not the one whose menu bar was clicked: a menu sized
+/// from it could hang past the bottom of the smaller screen.
+struct MenuScreenReader: NSViewRepresentable {
+    let onChange: (CGRect?) -> Void
+
+    func makeNSView(context: Context) -> ReaderView { ReaderView() }
+    func updateNSView(_ view: ReaderView, context: Context) { view.onChange = onChange }
+
+    final class ReaderView: NSView {
+        var onChange: (CGRect?) -> Void = { _ in }
+        private var observations: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            for observation in observations { NotificationCenter.default.removeObserver(observation) }
+            observations = []
+            guard let window else { return }
+            // Moved to another screen, and shown again: the panel is placed under the menu bar
+            // item before it is ordered in, so the screen is right by the time it is visible.
+            for name in [NSWindow.didChangeScreenNotification, NSWindow.didChangeOcclusionStateNotification] {
+                observations.append(NotificationCenter.default.addObserver(
+                    forName: name, object: window, queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.report() }
+                })
+            }
+            report()
+        }
+
+        private func report() {
+            onChange(window?.screen?.visibleFrame)
+        }
+    }
+}

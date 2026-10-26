@@ -55,6 +55,8 @@ private struct MeterMenu: View {
     @State private var drag = CardDrag()
     @State private var cardsHeight: CGFloat = 0
     @State private var panelHeight: CGFloat = 0
+    /// The screen the panel is on; until it is known, the focused one.
+    @State private var screenFrame: CGRect?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -73,7 +75,7 @@ private struct MeterMenu: View {
                 if tab == .limits {
                 ScrollView(.vertical) {
                     VStack(spacing: 10) {
-                        TileGrid(store: store, drag: drag, animation: reorderAnimation, moveByKeyboard: moveByKeyboard)
+                        TileGrid(store: store, drag: drag, animation: reorderAnimation, screenWidth: screenWidth, moveByKeyboard: moveByKeyboard)
                         HiddenProviders(store: store)
                     }
                     .padding(.horizontal, 10)
@@ -103,6 +105,7 @@ private struct MeterMenu: View {
         .coordinateSpace(.named(CardDrag.space))
         // Opening the menu is the moment a keychain dialog is welcome; the five-minute
         // refresh never raises one.
+        .background(MenuScreenReader { if $0 != screenFrame { screenFrame = $0 } })
         .background(MenuOpenObserver {
             Task { await store.menuOpened() }
             Task { await alerts.refreshAuthorization() }
@@ -115,7 +118,7 @@ extension MeterMenu {
     /// What is left of the screen once the header and footer are placed, as the share of the
     /// screen the chosen height asks for. The share is what keeps a menu with every tile on
     /// it from running past the bottom of the screen.
-    private var screenHeight: CGFloat { NSScreen.main?.visibleFrame.height ?? 800 }
+    private var screenHeight: CGFloat { (screenFrame ?? NSScreen.main?.visibleFrame)?.height ?? 800 }
 
     /// `.fill` holds the menu at that maximum even when the tiles are shorter, so it opens the
     /// same size however few of them there are; the other modes hug the tiles until they
@@ -127,7 +130,7 @@ extension MeterMenu {
 
     /// The screen the menu opens on, for the width clamp. Without one there is nothing to
     /// clamp against.
-    private var screenWidth: CGFloat { NSScreen.main?.visibleFrame.width ?? .infinity }
+    private var screenWidth: CGFloat { (screenFrame ?? NSScreen.main?.visibleFrame)?.width ?? .infinity }
 
     /// The tile being carried, drawn at full size under the pointer with a shadow to show
     /// it is off the grid.
@@ -259,10 +262,9 @@ struct TileGrid: View {
     @Bindable var store: UsageStore
     let drag: CardDrag
     let animation: Animation?
-    let moveByKeyboard: (Account, Int) -> Void
-
     /// The same clamp `MeterMenu` sizes its frame with, so the tiles never outgrow the menu.
-    private var screenWidth: CGFloat { NSScreen.main?.visibleFrame.width ?? .infinity }
+    let screenWidth: CGFloat
+    let moveByKeyboard: (Account, Int) -> Void
 
     var body: some View {
         let visible = store.order.filter(store.enabled)
